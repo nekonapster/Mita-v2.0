@@ -13,6 +13,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
 use Laravel\Fortify\Fortify;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 
 class FortifyServiceProvider extends ServiceProvider
 {
@@ -34,6 +36,24 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::redirectUserForTwoFactorAuthenticationUsing(RedirectIfTwoFactorAuthenticatable::class);
+
+        Fortify::authenticateUsing(function (Request $request) {
+
+        $user = User::where('email', $request->input('email'))->first();
+
+        // Comprobar que existe, está activo
+        // y tiene la contraseña correcta.
+        if (
+            $user &&
+            $user->activo &&
+            Hash::check((string) $request->input('password'), $user->password)
+        ) {
+            return $user;
+        }
+
+        // Rechazar autenticación
+        return null;
+    });
 
         Fortify::loginView(fn () => view('auth.login'));
         Fortify::twoFactorChallengeView(fn () => view('auth.two-factor-challenge'));

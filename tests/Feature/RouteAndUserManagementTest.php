@@ -207,4 +207,149 @@ public function test_employee_cannot_delete_directly_through_livewire(): void
     ]);
 }
 
+
+public function test_admin_cannot_delete_employee_with_contract(): void
+{
+    // Crear empleado
+    $empleado = Empleado::create([
+        'nombre' => 'Carlos',
+        'apellidos' => 'Historial Protegido',
+        'categoria_id' => $this->empleado->categoria_id,
+        'activo' => true,
+    ]);
+
+    // Crear contrato
+    $contrato = \App\Models\Contrato::create([
+        'empleado_id' => $empleado->id,
+        'tipo_contrato' => 'indefinido',
+        'fecha_inicio' => '2026-01-01',
+        'jornada_semanal_horas' => 40,
+    ]);
+
+    // Intentar eliminar manipulando Livewire
+    Livewire::actingAs($this->admin)
+        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+        ->set('empleadoToDeleteId', $empleado->id)
+        ->set('tieneHistorialLaboral', false)
+        ->call('eliminar');
+
+    // El empleado debe seguir existiendo, pero inactivo
+    $this->assertDatabaseHas('empleados', [
+        'id' => $empleado->id,
+        'activo' => false,
+    ]);
+
+    // El contrato debe conservarse
+    $this->assertDatabaseHas('contratos', [
+        'id' => $contrato->id,
+        'empleado_id' => $empleado->id,
+    ]);
+}
+
+public function test_admin_preserves_employee_with_cost_rate(): void
+{
+    $empleado = Empleado::create([
+        'nombre' => 'Laura',
+        'apellidos' => 'Tarifa Protegida',
+        'categoria_id' => $this->empleado->categoria_id,
+        'activo' => true,
+    ]);
+
+    $tarifa = \App\Models\TarifaCoste::create([
+        'empleado_id' => $empleado->id,
+        'coste_hora' => 18.50,
+        'fecha_inicio' => '2026-01-01',
+    ]);
+
+    Livewire::actingAs($this->admin)
+        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+        ->set('empleadoToDeleteId', $empleado->id)
+        ->set('tieneHistorialLaboral', false)
+        ->call('eliminar');
+
+    // El empleado debe conservarse, pero desactivado
+    $this->assertDatabaseHas('empleados', [
+        'id' => $empleado->id,
+        'activo' => false,
+    ]);
+
+    // La tarifa económica debe conservarse
+    $this->assertDatabaseHas('tarifas_coste', [
+        'id' => $tarifa->id,
+        'empleado_id' => $empleado->id,
+    ]);
+}
+
+public function test_admin_preserves_employee_with_user_account(): void
+{
+    // Ya tenemos un empleado vinculado a una cuenta
+    // desde el método setUp().
+
+    Livewire::actingAs($this->admin)
+        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+        ->set('empleadoToDeleteId', $this->empleado->id)
+        ->set('tieneHistorialLaboral', false)
+        ->call('eliminar');
+
+    // El empleado debe conservarse, pero inactivo.
+    $this->assertDatabaseHas('empleados', [
+        'id' => $this->empleado->id,
+        'activo' => false,
+    ]);
+
+    // La cuenta debe seguir vinculada al empleado.
+    $this->assertDatabaseHas('users', [
+        'id' => $this->employeeUser->id,
+        'employee_id' => $this->empleado->id,
+    ]);
+}
+
+public function test_inactive_employee_can_log_in(): void
+{
+    $this->empleado->update(['activo' => false]);
+
+    $this->post('/login', [
+        'email' => $this->employeeUser->email,
+        'password' => 'password123',
+    ]);
+
+    $this->assertAuthenticatedAs($this->employeeUser);
+}
+
+public function test_blocked_user_cannot_log_in(): void
+{
+    // Bloqueamos la cuenta, no al empleado
+    $this->employeeUser->update(['activo' => false]);
+
+    // Intentamos iniciar sesión
+    $this->post('/login', [
+        'email' => $this->employeeUser->email,
+        'password' => 'password123',
+    ]);
+
+    // El usuario debe permanecer sin autenticar
+    $this->assertGuest();
+}
+
+public function test_blocked_user_loses_active_session(): void
+{
+    // El empleado inicia sesión normalmente
+    $this->post('/login', [
+        'email' => $this->employeeUser->email,
+        'password' => 'password123',
+    ]);
+
+    $this->assertAuthenticatedAs($this->employeeUser);
+
+    // Un administrador bloquea su cuenta
+    $this->employeeUser->update(['activo' => false]);
+
+    // El empleado intenta seguir utilizando MiTa
+    $this->get('/dashboard')
+        ->assertRedirect('/login');
+
+    // Su sesión debe quedar cerrada
+    $this->assertGuest();
+}
+
 }

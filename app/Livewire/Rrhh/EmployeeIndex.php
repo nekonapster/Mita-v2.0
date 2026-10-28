@@ -111,7 +111,7 @@ class EmployeeIndex extends Component
         Gate::authorize('delete', $emp);
         $this->empleadoToDeleteId = $emp->id;
         $this->empleadoToDeleteNombre = $emp->nombre_completo;
-        $this->tieneHistorialLaboral = ($emp->contratos_count > 0 || $emp->asignaciones_count > 0 || $emp->ausencias_count > 0 || $emp->incidencias_count > 0);
+        $this->tieneHistorialLaboral = ($emp->contratos_count > 0 || $emp->asignaciones_count > 0 || $emp->ausencias_count > 0 || $emp->incidencias_count > 0 || $emp->tarifasCoste()->exists() || $emp->user()->exists());
         $this->feedbackMessage = null;
         $this->feedbackError = null;
         $this->modalDeleteOpen = true;
@@ -136,7 +136,9 @@ class EmployeeIndex extends Component
         $emp->contratos_count > 0 ||
         $emp->asignaciones_count > 0 ||
         $emp->ausencias_count > 0 ||
-        $emp->incidencias_count > 0;
+        $emp->incidencias_count > 0 ||
+        $emp->tarifasCoste()->exists() ||
+        $emp->user()->exists();
 
 
 
