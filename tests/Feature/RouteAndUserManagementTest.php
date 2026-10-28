@@ -133,4 +133,11 @@ class RouteAndUserManagementTest extends TestCase
         $response = $this->actingAs($this->employeeUser)->get('/portal/empleado');
         $response->assertStatus(200);
     }
+
+        public function test_employee_cannot_access_hr_employee_list(): void
+    {
+        $this->actingAs($this->employeeUser)
+            ->get('/rrhh/empleados')
+            ->assertForbidden();
+    }
 }

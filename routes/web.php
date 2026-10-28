@@ -19,6 +19,7 @@ use App\Livewire\Services\ProjectIndex;
 use App\Livewire\Services\ProjectShow;
 use App\Livewire\Services\ServiceNeedsManager;
 use Illuminate\Support\Facades\Route;
+use App\Models\Empleado;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,7 +37,9 @@ Route::middleware(['auth'])->group(function () {
 
     // Módulo 1: Recursos Humanos
     Route::prefix('rrhh')->name('rrhh.')->group(function () {
-        Route::get('/empleados', EmployeeIndex::class)->name('empleados');
+        Route::get('/empleados', EmployeeIndex::class)
+            ->can('viewAny', Empleado::class)
+            ->name('empleados');
         Route::get('/empleados/{id}', EmployeeShow::class)->name('empleados.show');
         Route::get('/ausencias', AbsenceIndex::class)->name('ausencias');
         Route::get('/incidencias', IncidentIndex::class)->name('incidencias');
