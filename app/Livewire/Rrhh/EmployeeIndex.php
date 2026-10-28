@@ -6,6 +6,7 @@ use App\Models\Categoria;
 use App\Models\Empleado;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Illuminate\Support\Facades\Gate;
 
 class EmployeeIndex extends Component
 {
@@ -70,6 +71,13 @@ class EmployeeIndex extends Component
 
     public function guardar(): void
     {
+        if ($this->empleadoId !== null) {
+            $empleado = Empleado::findOrFail($this->empleadoId);
+            Gate::authorize('update', $empleado);
+        } else {
+            Gate::authorize('create', Empleado::class);
+        }
+
         $this->validate();
 
         Empleado::updateOrCreate(
@@ -100,6 +108,7 @@ class EmployeeIndex extends Component
     public function confirmarEliminar(int $id): void
     {
         $emp = Empleado::withCount(['contratos', 'asignaciones', 'ausencias', 'incidencias'])->findOrFail($id);
+        Gate::authorize('delete', $emp);
         $this->empleadoToDeleteId = $emp->id;
         $this->empleadoToDeleteNombre = $emp->nombre_completo;
         $this->tieneHistorialLaboral = ($emp->contratos_count > 0 || $emp->asignaciones_count > 0 || $emp->ausencias_count > 0 || $emp->incidencias_count > 0);
@@ -114,10 +123,26 @@ class EmployeeIndex extends Component
             return;
         }
 
-        try {
-            $emp = Empleado::findOrFail($this->empleadoToDeleteId);
+        $emp = Empleado::withCount([
+        'contratos',
+        'asignaciones',
+        'ausencias',
+        'incidencias',
+        ])->findOrFail($this->empleadoToDeleteId);
 
-            if ($this->tieneHistorialLaboral) {
+        Gate::authorize('delete', $emp);
+
+        $tieneHistorialReal =
+        $emp->contratos_count > 0 ||
+        $emp->asignaciones_count > 0 ||
+        $emp->ausencias_count > 0 ||
+        $emp->incidencias_count > 0;
+
+
+
+        try {
+            
+            if ($tieneHistorialReal) {
                 $emp->update(['activo' => false]);
                 $this->feedbackMessage = "El empleado {$emp->nombre_completo} cuenta con historial de contratos/turnos; ha sido dado de baja (marcado como Inactivo) para preservar la integridad laboral.";
             } else {

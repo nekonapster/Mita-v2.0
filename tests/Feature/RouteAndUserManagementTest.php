@@ -140,4 +140,71 @@ class RouteAndUserManagementTest extends TestCase
             ->get('/rrhh/empleados')
             ->assertForbidden();
     }
+    public function test_employee_cannot_create_employee_through_livewire(): void
+{
+    Livewire::actingAs($this->employeeUser)
+        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+        ->set('nombre', 'Prueba')
+        ->set('apellidos', 'No Autorizado')
+        ->set('categoria_id', $this->empleado->categoria_id)
+        ->call('guardar')
+        ->assertForbidden();
+}
+
+    public function test_employee_cannot_edit_employee_through_livewire(): void
+{
+    Livewire::actingAs($this->employeeUser)
+        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+        ->call('abrirModalEditar', $this->empleado->id)
+        ->set('nombre', 'Cambio no autorizado')
+        ->call('guardar')
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('empleados', [
+        'id' => $this->empleado->id,
+        'nombre' => 'Mateo',
+    ]);
+}
+
+public function test_employee_cannot_delete_another_employee(): void
+{
+    $victima = Empleado::create([
+        'nombre' => 'Elena',
+        'apellidos' => 'Protegida',
+        'categoria_id' => $this->empleado->categoria_id,
+        'activo' => true,
+    ]);
+
+    Livewire::actingAs($this->employeeUser)
+        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+        ->call('confirmarEliminar', $victima->id)
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('empleados', [
+        'id' => $victima->id,
+    ]);
+}
+
+
+public function test_employee_cannot_delete_directly_through_livewire(): void
+{
+    $victima = Empleado::create([
+        'nombre' => 'Elena',
+        'apellidos' => 'Protegida',
+        'categoria_id' => $this->empleado->categoria_id,
+        'activo' => true,
+    ]);
+
+    Livewire::actingAs($this->employeeUser)
+        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+        ->set('empleadoToDeleteId', $victima->id)
+        ->set('tieneHistorialLaboral', false)
+        ->call('eliminar')
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('empleados', [
+        'id' => $victima->id,
+    ]);
+}
+
 }
