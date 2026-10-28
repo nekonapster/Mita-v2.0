@@ -1,0 +1,160 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+@theme {
+    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+/* ========================================================
+   MODO CLARO (LIGHT THEME)
+   ======================================================== */
+html.light {
+    color-scheme: light;
+}
+
+html.light,
+html.light body {
+    background-color: #f8fafc !important; /* slate-50 */
+    color: #0f172a !important; /* slate-900 */
+}
+
+/* Barra lateral / Sidebar */
+html.light aside {
+    background-color: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+html.light aside .border-b,
+html.light aside .border-t,
+html.light aside .border-slate-800 {
+    border-color: #e2e8f0 !important;
+}
+
+html.light aside nav a {
+    color: #475569 !important;
+}
+
+html.light aside nav a:hover {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+}
+
+/* Header superior / Topbar */
+html.light header {
+    background-color: rgba(255, 255, 255, 0.9) !important;
+    border-color: #e2e8f0 !important;
+}
+
+/* Contenedores, tarjetas y tablas */
+html.light .bg-slate-900,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/95,
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/60 {
+    background-color: #ffffff !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+}
+
+html.light .bg-slate-950,
+html.light .bg-slate-950\/70,
+html.light .bg-slate-950\/60,
+html.light .bg-slate-950\/80 {
+    background-color: #f8fafc !important;
+}
+
+html.light .bg-slate-800,
+html.light .bg-slate-800\/80,
+html.light .bg-slate-800\/60,
+html.light .bg-slate-800\/50,
+html.light .bg-slate-800\/40,
+html.light .bg-slate-800\/30 {
+    background-color: #f1f5f9 !important;
+}
+
+/* Bordes y líneas divisoras */
+html.light .border-slate-800,
+html.light .border-slate-800\/80,
+html.light .border-slate-800\/60,
+html.light .border-slate-700,
+html.light .border-slate-600 {
+    border-color: #e2e8f0 !important;
+}
+
+html.light .divide-slate-800,
+html.light .divide-slate-800\/60,
+html.light .divide-slate-700 {
+    border-color: #e2e8f0 !important;
+}
+
+/* Tipografía de alto contraste */
+html.light .text-white {
+    color: #0f172a !important;
+}
+
+html.light .text-slate-100,
+html.light .text-slate-200 {
+    color: #1e293b !important;
+}
+
+html.light .text-slate-300 {
+    color: #334155 !important;
+}
+
+html.light .text-slate-400 {
+    color: #64748b !important;
+}
+
+html.light .text-slate-500 {
+    color: #94a3b8 !important;
+}
+
+/* Tablas */
+html.light table thead {
+    background-color: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+}
+
+html.light table tbody tr:hover {
+    background-color: #f1f5f9 !important;
+}
+
+/* Formularios: inputs, selects, textareas */
+html.light input[type="text"],
+html.light input[type="email"],
+html.light input[type="password"],
+html.light input[type="date"],
+html.light input[type="time"],
+html.light input[type="datetime-local"],
+html.light input[type="number"],
+html.light select,
+html.light textarea {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+    color: #94a3b8 !important;
+}
+
+html.light input:focus,
+html.light select:focus,
+html.light textarea:focus {
+    background-color: #ffffff !important;
+    border-color: #0284c7 !important;
+    box-shadow: 0 0 0 1px #0284c7 !important;
+}
+
+/* Modales y backdrops */
+html.light .fixed.inset-0.bg-slate-950\/80 {
+    background-color: rgba(15, 23, 42, 0.45) !important;
+    backdrop-filter: blur(4px) !important;
+}
+
