@@ -56,36 +56,38 @@ class CrudDeletionTest extends TestCase
 
         Livewire::actingAs($this->admin)
             ->test(CostRateManager::class)
-            ->call('eliminar', $tarifa->id);
-
-        $this->assertDatabaseMissing('tarifas_coste', ['id' => $tarifa->id]);
-    }
-
-    public function test_delete_economic_movement(): void
-    {
-        $cliente = Cliente::create(['razon_social' => 'Club Deportivo', 'activo' => true]);
-        $proyecto = Proyecto::create([
-            'cliente_id' => $cliente->id,
-            'nombre' => 'Proyecto Test',
-            'fecha_inicio' => now()->toDateString(),
-            'estado' => 'activo',
-        ]);
-
-        $mov = MovimientoEconomico::create([
-            'proyecto_id' => $proyecto->id,
-            'tipo' => 'gasto',
-            'fecha' => now()->toDateString(),
-            'concepto' => 'Material primeros auxilios',
-            'importe' => 150.00,
-        ]);
-
-        Livewire::actingAs($this->admin)
-            ->test(EconomicMovementsManager::class)
-            ->call('eliminar', $mov->id);
-
-        $this->assertDatabaseMissing('movimientos_economicos', ['id' => $mov->id]);
-    }
-
+            ->call('eliminar', $tarifa->id)
+            ->call('ejecutarEliminar');
+            
+            $this->assertDatabaseMissing('tarifas_coste', ['id' => $tarifa->id]);
+            }
+            
+            public function test_delete_economic_movement(): void
+            {
+                $cliente = Cliente::create(['razon_social' => 'Club Deportivo', 'activo' => true]);
+                $proyecto = Proyecto::create([
+                    'cliente_id' => $cliente->id,
+                    'nombre' => 'Proyecto Test',
+                    'fecha_inicio' => now()->toDateString(),
+                    'estado' => 'activo',
+                    ]);
+                    
+                    $mov = MovimientoEconomico::create([
+                        'proyecto_id' => $proyecto->id,
+                        'tipo' => 'gasto',
+                        'fecha' => now()->toDateString(),
+                        'concepto' => 'Material primeros auxilios',
+                        'importe' => 150.00,
+                        ]);
+                        
+                        Livewire::actingAs($this->admin)
+                        ->test(EconomicMovementsManager::class)
+                        ->call('eliminar', $mov->id)
+                        ->call('ejecutarEliminar');
+                        
+                        $this->assertDatabaseMissing('movimientos_economicos', ['id' => $mov->id]);
+                        }
+                        
     public function test_delete_user_in_user_role_manager(): void
     {
         $user = User::create([
