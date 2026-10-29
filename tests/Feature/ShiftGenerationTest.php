@@ -103,4 +103,220 @@ class ShiftGenerationTest extends TestCase
         $this->assertEquals('2026-06-06 06:00:00', Carbon::parse($turno->hora_fin)->format('Y-m-d H:i:s'));
         $this->assertEquals(8.0, $turno->duracionHoras());
     }
+
+    public function test_planner_can_publish_shifts(): void
+    {
+        // Crear el rol de planificador
+        $rol = \App\Models\Role::create([
+            'name' => \App\Models\Role::PLANNER,
+            'display_name' => 'Planificador',
+        ]);
+
+        // Crear usuario planificador
+        $planner = \App\Models\User::create([
+            'name' => 'Planificador Test',
+            'email' => 'planner@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        // 1. Comprobar que tiene el rol.
+        $this->assertTrue(
+            $planner->fresh()->hasRole(\App\Models\Role::PLANNER),
+            'ERROR: El usuario no tiene el rol planner.'
+        );
+
+        // 2. Comprobar que Laravel encuentra la política.
+        $policy = \Illuminate\Support\Facades\Gate::getPolicyFor(Turno::class);
+
+        $this->assertInstanceOf(
+            \App\Policies\TurnoPolicy::class,
+            $policy,
+            'ERROR: Laravel no encuentra TurnoPolicy.'
+        );
+
+        // 3. Comprobar que existe el método publish.
+        $this->assertTrue(
+            method_exists($policy, 'publish'),
+            'ERROR: TurnoPolicy no tiene el método publish.'
+        );
+
+        $this->assertTrue(
+            \Illuminate\Support\Facades\Gate::forUser($planner)
+                ->allows('publish', Turno::class),
+            'El planificador no tiene permiso para publicar turnos.'
+        );
+        // Generar turnos en borrador
+        $servicio = new ShiftGenerationService();
+
+        $servicio->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        // Comprobar que existen 5 borradores
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+
+        // Publicar como planificador
+        $componente = \Livewire\Livewire::actingAs($planner)
+            ->test(\App\Livewire\Roster\ShiftManager::class)
+            ->assertStatus(200)
+            ->set('fechaDesde', '2026-06-01')
+            ->assertSet('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->assertSet('fechaHasta', '2026-06-07')
+            ->call('publicarBorradores')
+            ->assertStatus(200)
+            ->assertSet(
+                'feedbackMessage',
+                'Se han publicado 5 turnos en el cuadrante.'
+            );
+
+
+
+        // Comprobar que los 5 turnos están publicados
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_PUBLICADO)->count()
+        );
+
+        // No deben quedar borradores
+        $this->assertSame(
+            0,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+    }
+
+    public function test_employee_cannot_change_shift_state(): void
+    {
+        // Crear usuario empleado
+        $rol = \App\Models\Role::create([
+            'name' => \App\Models\Role::EMPLOYEE,
+            'display_name' => 'Empleado',
+        ]);
+
+        $empleado = \App\Models\User::create([
+            'name' => 'Empleado Test',
+            'email' => 'empleado@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $empleado->roles()->attach($rol->id);
+
+        // Generar turnos
+        $servicio = new ShiftGenerationService();
+
+        $servicio->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $turno = Turno::firstOrFail();
+
+        // Intentar publicar un turno sin autorización
+        $resultado = \Livewire\Livewire::actingAs($empleado)
+            ->test(\App\Livewire\Roster\ShiftManager::class)
+            ->call('cambiarEstado', $turno->id, Turno::ESTADO_PUBLICADO);
+
+        // El turno debe continuar en borrador
+        $this->assertDatabaseHas('turnos', [
+            'id' => $turno->id,
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+
+        // Laravel debe rechazar la operación
+        $resultado->assertForbidden();
+    }
+
+    public function test_planner_can_change_shift_state(): void
+    {
+        // Crear usuario planificador
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = \App\Models\User::create([
+            'name' => 'Planificador Test',
+            'email' => 'planner_estado@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        // Generar turnos
+        $servicio = new ShiftGenerationService();
+
+        $servicio->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $turno = Turno::firstOrFail();
+
+        // Verificar estado inicial
+        $this->assertEquals(
+            Turno::ESTADO_BORRADOR,
+            $turno->estado
+        );
+
+        // Modificar como planificador
+        \Livewire\Livewire::actingAs($planner)
+            ->test(\App\Livewire\Roster\ShiftManager::class)
+            ->call('cambiarEstado', $turno->id, Turno::ESTADO_PUBLICADO)
+            ->assertStatus(200);
+
+        // Verificar que el estado cambió realmente
+        $this->assertDatabaseHas('turnos', [
+            'id' => $turno->id,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+    }
+
+    public function test_planner_cannot_set_invalid_shift_state(): void
+    {
+        // Crear planificador autorizado
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = \App\Models\User::create([
+            'name' => 'Planificador Test',
+            'email' => 'planner_invalido@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        // Generar turnos
+        $servicio = new ShiftGenerationService();
+
+        $servicio->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $turno = Turno::firstOrFail();
+
+        // Intentar introducir un estado inventado
+        \Livewire\Livewire::actingAs($planner)
+            ->test(\App\Livewire\Roster\ShiftManager::class)
+            ->call('cambiarEstado', $turno->id, 'pendiente123')
+            ->assertHasErrors(['nuevoEstado']);
+
+        // El estado original debe conservarse
+        $this->assertDatabaseHas('turnos', [
+            'id' => $turno->id,
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+    }
 }

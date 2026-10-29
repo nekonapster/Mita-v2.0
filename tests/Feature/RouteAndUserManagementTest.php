@@ -461,4 +461,18 @@ public function test_system_preserves_last_active_admin(): void
     $this->assertSame(1, $administradoresActivos);
 }
 
+
+public function test_employee_cannot_publish_shifts(): void
+{
+    Livewire::actingAs($this->employeeUser)
+        ->test(\App\Livewire\Roster\ShiftManager::class)
+        ->call('publicarBorradores')
+        ->assertForbidden();
+}
+
+public function publish(User $user): bool
+{
+    return $user->hasRole(Role::PLANNER);
+}
+
 }

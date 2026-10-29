@@ -199,4 +199,341 @@ class ShiftAssignmentValidationTest extends TestCase
         $this->assertStringContainsString('Ausencia aprobada sobrevenida', $asig->motivo_conflicto);
         $this->assertEquals('con_conflicto', $this->turno->estadoCobertura());
     }
+
+    public function test_cancelling_shift_preserves_assignments_without_counting_hours(): void
+    {
+        // Crear segundo empleado
+        $otroEmpleado = Empleado::create([
+            'nombre' => 'Ana',
+            'apellidos' => 'Prueba',
+            'categoria_id' => $this->catSocorrista->id,
+            'activo' => true,
+        ]);
+
+        // Asignar dos empleados al turno
+        foreach ([$this->empleado, $otroEmpleado] as $empleado) {
+            Asignacion::create([
+                'turno_id' => $this->turno->id,
+                'empleado_id' => $empleado->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+        }
+
+        $servicio = new \App\Services\EconomicCalculationService();
+
+        // Antes de cancelar: 2 empleados × 8 horas
+        $informeAntes = $servicio->calcularInformeProyecto(
+            $this->turno->proyecto
+        );
+
+        $this->assertEquals(16, $informeAntes['horas_previstas']);
+
+        // Crear planificador autorizado
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = \App\Models\User::create([
+            'name' => 'Planificador',
+            'email' => 'planner_cancelacion@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        // Cancelar el turno
+        \Livewire\Livewire::actingAs($planner)
+            ->test(\App\Livewire\Roster\ShiftManager::class)
+            ->call(
+                'cambiarEstado',
+                $this->turno->id,
+                Turno::ESTADO_CANCELADO
+            );
+
+        // El turno queda cancelado
+        $this->assertDatabaseHas('turnos', [
+            'id' => $this->turno->id,
+            'estado' => Turno::ESTADO_CANCELADO,
+        ]);
+
+        // Se conservan las dos asignaciones
+        $this->assertEquals(
+            2,
+            Asignacion::where('turno_id', $this->turno->id)->count()
+        );
+
+        // Ambas asignaciones quedan canceladas
+        $this->assertEquals(
+            2,
+            Asignacion::where('turno_id', $this->turno->id)
+                ->where('estado', Asignacion::ESTADO_CANCELADO)
+                ->count()
+        );
+
+        // Comprobar los cálculos económicos
+        $informe = $servicio->calcularInformeProyecto(
+            $this->turno->proyecto
+        );
+
+        $this->assertEquals(0, $informe['horas_previstas']);
+        $this->assertEquals(0, $informe['horas_realizadas']);
+    }
+
+    public function test_cannot_cancel_shift_with_registered_hours(): void
+    {
+        // Crear una asignación
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Registrar 4 horas realmente trabajadas
+        $registro = \App\Models\RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => '2026-06-15 10:00:00',
+            'fin_real' => '2026-06-15 14:00:00',
+            'descanso_minutos' => 0,
+            'horas_computables' => 4,
+            'estado' => \App\Models\RegistroHora::ESTADO_VALIDADO,
+        ]);
+
+        // Crear un planificador autorizado
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = \App\Models\User::create([
+            'name' => 'Planificador Test',
+            'email' => 'planner_horas@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        // Intentar cancelar el turno
+        \Livewire\Livewire::actingAs($planner)
+            ->test(\App\Livewire\Roster\ShiftManager::class)
+            ->call('cambiarEstado', $this->turno->id, Turno::ESTADO_CANCELADO)
+            ->assertHasErrors(['nuevoEstado']);
+
+        // El turno debe continuar publicado
+        $this->assertDatabaseHas('turnos', [
+            'id' => $this->turno->id,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        // La asignación debe permanecer confirmada
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacion->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Las 4 horas deben conservarse
+        $this->assertDatabaseHas('registros_horas', [
+            'id' => $registro->id,
+            'horas_computables' => 4,
+            'estado' => \App\Models\RegistroHora::ESTADO_VALIDADO,
+        ]);
+    }
+
+    public function test_employee_cannot_register_hours_for_another_employee(): void
+    {
+        // Crear otro empleado
+        $otroEmpleado = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'Prueba',
+            'categoria_id' => $this->catSocorrista->id,
+            'activo' => true,
+        ]);
+
+        // Asignar el turno a Pedro
+        $asignacionAjena = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $otroEmpleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Crear usuario vinculado a otro trabajador
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan Usuario',
+            'email' => 'juan_seguridad@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        // Juan intenta registrar horas en la asignación de Pedro
+        $resultado = \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacionAjena->id)
+            ->set('inicio_real', '2026-06-15T10:00')
+            ->set('fin_real', '2026-06-15T18:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion');
+
+        // No debe crearse ningún registro ajeno
+        $this->assertDatabaseMissing('registros_horas', [
+            'asignacion_id' => $asignacionAjena->id,
+        ]);
+
+        // Laravel debe rechazar la operación
+        $resultado->assertForbidden();
+    }
+
+    public function test_employee_cannot_open_another_employee_hours(): void
+    {
+        // Crear empleado Pedro
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'Prueba',
+            'categoria_id' => $this->catSocorrista->id,
+            'activo' => true,
+        ]);
+
+        // Crear asignación de Pedro
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Crear usuario Juan
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $juan = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_privacidad@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $juan->roles()->attach($rol->id);
+
+        // Juan intenta abrir la imputación de Pedro
+        \Livewire\Livewire::actingAs($juan)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->call('abrirModalImputar', $asignacion->id)
+            ->assertForbidden();
+    }
+
+    public function test_employee_cannot_modify_validated_hours(): void
+    {
+        // Crear asignación del propio empleado
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Crear registro de 4 horas ya validadas
+        $registro = \App\Models\RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => '2026-06-15 10:00:00',
+            'fin_real' => '2026-06-15 14:00:00',
+            'descanso_minutos' => 0,
+            'horas_computables' => 4,
+            'estado' => \App\Models\RegistroHora::ESTADO_VALIDADO,
+        ]);
+
+        // Crear cuenta vinculada al trabajador
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_validado@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        // Juan intenta cambiar sus 4 horas validadas por 8
+        $resultado = \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacion->id)
+            ->set('inicio_real', '2026-06-15T10:00')
+            ->set('fin_real', '2026-06-15T18:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion');
+
+        // Las 4 horas aprobadas deben conservarse
+        $this->assertDatabaseHas('registros_horas', [
+            'id' => $registro->id,
+            'horas_computables' => 4,
+            'estado' => \App\Models\RegistroHora::ESTADO_VALIDADO,
+        ]);
+
+        // La modificación debe estar prohibida
+        $resultado->assertForbidden();
+    }
+
+    public function test_employee_can_modify_pending_hours(): void
+    {
+        // Crear asignación del empleado
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Crear registro pendiente de 4 horas
+        $registro = \App\Models\RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => '2026-06-15 10:00:00',
+            'fin_real' => '2026-06-15 14:00:00',
+            'descanso_minutos' => 0,
+            'horas_computables' => 4,
+            'estado' => \App\Models\RegistroHora::ESTADO_PENDIENTE,
+        ]);
+
+        // Crear usuario vinculado al empleado
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_pendiente@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        // Modificar sus horas de 4 a 8
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacion->id)
+            ->set('inicio_real', '2026-06-15T10:00')
+            ->set('fin_real', '2026-06-15T18:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion')
+            ->assertHasNoErrors();
+
+        // Comprobar que se actualizaron las horas
+        $this->assertDatabaseHas('registros_horas', [
+            'id' => $registro->id,
+            'horas_computables' => 8,
+            'estado' => \App\Models\RegistroHora::ESTADO_PENDIENTE,
+        ]);
+
+        // Comprobar que no se creó otro registro
+        $this->assertDatabaseCount('registros_horas', 1);
+    }
 }

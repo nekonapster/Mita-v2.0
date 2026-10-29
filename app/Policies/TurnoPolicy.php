@@ -54,4 +54,9 @@ class TurnoPolicy
     {
         return $user->hasRole(Role::PLANNER);
     }
+
+    public function publish(\App\Models\User $user): bool
+    {
+        return $user->hasRole(\App\Models\Role::PLANNER);
+    }
 }

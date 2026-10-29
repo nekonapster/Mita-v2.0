@@ -38,6 +38,14 @@ class EmployeePortal extends Component
     public function abrirModalImputar(int $asignacionId): void
     {
         $asig = Asignacion::with('turno.instalacion')->findOrFail($asignacionId);
+        // Impedir consultar asignaciones de otros empleados.
+        $usuario = auth()->user();
+
+        abort_unless(
+            $usuario?->employee_id !== null &&
+                (int) $asig->empleado_id === (int) $usuario->employee_id,
+            403
+        );
         $this->asignacionSeleccionadaId = $asig->id;
         $this->turnoParaImputar = $asig->turno;
 
@@ -59,6 +67,44 @@ class EmployeePortal extends Component
 
     public function guardarImputacion(): void
     {
+
+        // Obtener la asignación que se intenta modificar.
+        $asignacion = Asignacion::findOrFail(
+            $this->asignacionSeleccionadaId
+        );
+
+        // Comprobar que pertenece al empleado autenticado.
+        $usuario = auth()->user();
+
+        abort_unless(
+            $usuario?->employee_id !== null &&
+                (int) $asignacion->empleado_id === (int) $usuario->employee_id,
+            403
+        );
+
+
+        // Buscar un registro de horas existente.
+        $registroExistente = RegistroHora::where(
+            'asignacion_id',
+            $asignacion->id
+        )->first();
+
+        // Comprobar los permisos correspondientes.
+        if ($registroExistente) {
+
+            // Si existe, comprobar permiso para modificarlo.
+            \Illuminate\Support\Facades\Gate::authorize(
+                'update',
+                $registroExistente
+            );
+        } else {
+
+            // Si no existe, comprobar permiso para crearlo.
+            \Illuminate\Support\Facades\Gate::authorize(
+                'create',
+                RegistroHora::class
+            );
+        }
         $this->validate([
             'inicio_real' => 'required|date',
             'fin_real' => 'required|date|after_or_equal:inicio_real',
@@ -131,18 +177,18 @@ class EmployeePortal extends Component
             // Próximos turnos (futuros o de hoy)
             $turnosFuturos = Asignacion::where('empleado_id', $empleadoId)
                 ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
-                ->whereHas('turno', fn ($q) => $q->where('fecha', '>=', now()->toDateString())->where('estado', '!=', Turno::ESTADO_CANCELADO))
+                ->whereHas('turno', fn($q) => $q->where('fecha', '>=', now()->toDateString())->where('estado', '!=', Turno::ESTADO_CANCELADO))
                 ->with(['turno.instalacion', 'turno.actividad', 'registroHora'])
                 ->get()
-                ->sortBy(fn ($a) => $a->turno->hora_inicio);
+                ->sortBy(fn($a) => $a->turno->hora_inicio);
 
             // Turnos pasados o de hoy para imputar
             $turnosParaImputar = Asignacion::where('empleado_id', $empleadoId)
                 ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
-                ->whereHas('turno', fn ($q) => $q->where('fecha', '<=', now()->toDateString())->where('estado', '!=', Turno::ESTADO_CANCELADO))
+                ->whereHas('turno', fn($q) => $q->where('fecha', '<=', now()->toDateString())->where('estado', '!=', Turno::ESTADO_CANCELADO))
                 ->with(['turno.instalacion', 'turno.actividad', 'registroHora'])
                 ->get()
-                ->sortByDesc(fn ($a) => $a->turno->hora_inicio);
+                ->sortByDesc(fn($a) => $a->turno->hora_inicio);
 
             $misAusencias = Ausencia::where('empleado_id', $empleadoId)
                 ->orderBy('fecha_hora_inicio', 'desc')

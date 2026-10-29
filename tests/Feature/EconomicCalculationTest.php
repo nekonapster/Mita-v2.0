@@ -147,4 +147,39 @@ class EconomicCalculationTest extends TestCase
         $this->assertTrue($informe['coste_real_incompleto']);
         $this->assertEquals(0.00, $informe['coste_personal_real']);
     }
+
+    public function test_cancelled_assignment_does_not_count_hours(): void
+    {
+        // Crear una segunda empleada
+        $ana = Empleado::create([
+            'nombre' => 'Ana',
+            'apellidos' => 'Prueba',
+            'categoria_id' => $this->empleado->categoria_id,
+            'activo' => true,
+        ]);
+
+        // Asignación cancelada, conservada como historial
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $ana->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
+        $informe = $this->econService
+            ->calcularInformeProyecto($this->proyecto);
+
+        // La asignación cancelada sigue existiendo
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacion->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
+        // Solo computan las horas de Carlos
+        $this->assertEquals(8, $informe['horas_previstas']);
+        $this->assertEquals(7.5, $informe['horas_realizadas']);
+
+        // Los costes tampoco deben incrementarse
+        $this->assertEquals(120, $informe['coste_personal_previsto']);
+        $this->assertEquals(112.50, $informe['coste_personal_real']);
+    }
 }
