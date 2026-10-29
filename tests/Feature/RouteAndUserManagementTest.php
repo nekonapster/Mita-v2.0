@@ -352,4 +352,113 @@ public function test_blocked_user_loses_active_session(): void
     $this->assertGuest();
 }
 
+public function test_admin_can_block_and_unblock_user(): void
+{
+    // Bloquear cuenta
+    Livewire::actingAs($this->admin)
+        ->test(UserRoleManager::class)
+        ->call('cambiarEstadoCuenta', $this->employeeUser->id);
+
+    $this->assertDatabaseHas('users', [
+        'id' => $this->employeeUser->id,
+        'activo' => false,
+    ]);
+
+    // El empleado sigue activo laboralmente
+    $this->assertDatabaseHas('empleados', [
+        'id' => $this->empleado->id,
+        'activo' => true,
+    ]);
+
+    // Desbloquear cuenta
+    Livewire::actingAs($this->admin)
+        ->test(UserRoleManager::class)
+        ->call('cambiarEstadoCuenta', $this->employeeUser->id);
+
+    $this->assertDatabaseHas('users', [
+        'id' => $this->employeeUser->id,
+        'activo' => true,
+    ]);
+}
+
+public function test_employee_cannot_block_user_accounts(): void
+{
+    // Autenticarnos como empleado
+    $this->actingAs($this->employeeUser);
+
+    // Probar directamente la autorización del método
+    try {
+        (new UserRoleManager())
+            ->cambiarEstadoCuenta($this->admin->id);
+
+        $this->fail('La operación debería devolver 403.');
+
+    } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        $this->assertSame(403, $e->getStatusCode());
+    }
+
+    // Comprobar que la cuenta no se ha bloqueado
+    $this->assertDatabaseHas('users', [
+        'id' => $this->admin->id,
+        'activo' => true,
+    ]);
+}
+
+public function test_admin_cannot_block_own_account(): void
+{
+    Livewire::actingAs($this->admin)
+        ->test(UserRoleManager::class)
+        ->call('cambiarEstadoCuenta', $this->admin->id)
+        ->assertSet(
+            'feedbackError',
+            'No puedes modificar el estado de tu propia cuenta.'
+        );
+
+    // La cuenta debe permanecer activa.
+    $this->assertDatabaseHas('users', [
+        'id' => $this->admin->id,
+        'activo' => true,
+    ]);
+}
+
+public function test_system_preserves_last_active_admin(): void
+{
+    // Crear un segundo administrador
+    $segundoAdmin = User::create([
+        'name' => 'Administrador B',
+        'email' => 'adminb@mita.es',
+        'password' => bcrypt('password123'),
+    ]);
+
+    $segundoAdmin->roles()->attach($this->roleAdmin->id);
+
+    // Administrador A bloquea a B
+    Livewire::actingAs($this->admin)
+        ->test(UserRoleManager::class)
+        ->call('cambiarEstadoCuenta', $segundoAdmin->id);
+
+    $this->assertDatabaseHas('users', [
+        'id' => $segundoAdmin->id,
+        'activo' => false,
+    ]);
+
+    // A intenta bloquear su propia cuenta
+    Livewire::actingAs($this->admin)
+        ->test(UserRoleManager::class)
+        ->call('cambiarEstadoCuenta', $this->admin->id)
+        ->assertSet(
+            'feedbackError',
+            'No puedes modificar el estado de tu propia cuenta.'
+        );
+
+    // Debe permanecer al menos un administrador activo
+    $administradoresActivos = User::where('activo', true)
+        ->whereHas('roles', fn ($q) =>
+            $q->where('name', Role::ADMIN)
+        )
+        ->count();
+
+    $this->assertSame(1, $administradoresActivos);
+}
+
 }

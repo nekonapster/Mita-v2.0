@@ -179,6 +179,52 @@ class UserRoleManager extends Component
         }
     }
 
+    public function cambiarEstadoCuenta(int $id): void
+{
+    // Solo los administradores pueden gestionar cuentas.
+    abort_unless(auth()->user()?->isAdmin(), 403);
+
+    $this->feedbackError = null;
+
+    $usuario = User::findOrFail($id);
+
+    // Impedir que un administrador se bloquee a sí mismo.
+    if ($usuario->id === auth()->id()) {
+        $this->feedbackError =
+            'No puedes modificar el estado de tu propia cuenta.';
+        return;
+    }
+
+    // Proteger al último administrador activo.
+    if ($usuario->activo && $usuario->isAdmin()) {
+
+        $otroAdmin = User::where('activo', true)
+            ->where('id', '!=', $usuario->id)
+            ->whereHas('roles', fn ($q) =>
+                $q->where('name', Role::ADMIN)
+            )
+            ->exists();
+
+        if (!$otroAdmin) {
+            $this->feedbackError =
+                'No puedes bloquear al último administrador activo.';
+            return;
+        }
+    }
+
+    // Alternar el estado de la cuenta.
+    $usuario->update([
+        'activo' => !$usuario->activo,
+    ]);
+
+    session()->flash(
+        'success',
+        $usuario->activo
+            ? 'Cuenta desbloqueada correctamente.'
+            : 'Cuenta bloqueada correctamente.'
+    );
+}
+
     public function render()
     {
         $query = User::with(['roles', 'employee'])
