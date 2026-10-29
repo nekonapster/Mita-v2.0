@@ -134,345 +134,664 @@ class RouteAndUserManagementTest extends TestCase
         $response->assertStatus(200);
     }
 
-        public function test_employee_cannot_access_hr_employee_list(): void
+    public function test_employee_cannot_access_hr_employee_list(): void
     {
         $this->actingAs($this->employeeUser)
             ->get('/rrhh/empleados')
             ->assertForbidden();
     }
     public function test_employee_cannot_create_employee_through_livewire(): void
-{
-    Livewire::actingAs($this->employeeUser)
-        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
-        ->set('nombre', 'Prueba')
-        ->set('apellidos', 'No Autorizado')
-        ->set('categoria_id', $this->empleado->categoria_id)
-        ->call('guardar')
-        ->assertForbidden();
-}
-
-    public function test_employee_cannot_edit_employee_through_livewire(): void
-{
-    Livewire::actingAs($this->employeeUser)
-        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
-        ->call('abrirModalEditar', $this->empleado->id)
-        ->set('nombre', 'Cambio no autorizado')
-        ->call('guardar')
-        ->assertForbidden();
-
-    $this->assertDatabaseHas('empleados', [
-        'id' => $this->empleado->id,
-        'nombre' => 'Mateo',
-    ]);
-}
-
-public function test_employee_cannot_delete_another_employee(): void
-{
-    $victima = Empleado::create([
-        'nombre' => 'Elena',
-        'apellidos' => 'Protegida',
-        'categoria_id' => $this->empleado->categoria_id,
-        'activo' => true,
-    ]);
-
-    Livewire::actingAs($this->employeeUser)
-        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
-        ->call('confirmarEliminar', $victima->id)
-        ->assertForbidden();
-
-    $this->assertDatabaseHas('empleados', [
-        'id' => $victima->id,
-    ]);
-}
-
-
-public function test_employee_cannot_delete_directly_through_livewire(): void
-{
-    $victima = Empleado::create([
-        'nombre' => 'Elena',
-        'apellidos' => 'Protegida',
-        'categoria_id' => $this->empleado->categoria_id,
-        'activo' => true,
-    ]);
-
-    Livewire::actingAs($this->employeeUser)
-        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
-        ->set('empleadoToDeleteId', $victima->id)
-        ->set('tieneHistorialLaboral', false)
-        ->call('eliminar')
-        ->assertForbidden();
-
-    $this->assertDatabaseHas('empleados', [
-        'id' => $victima->id,
-    ]);
-}
-
-
-public function test_admin_cannot_delete_employee_with_contract(): void
-{
-    // Crear empleado
-    $empleado = Empleado::create([
-        'nombre' => 'Carlos',
-        'apellidos' => 'Historial Protegido',
-        'categoria_id' => $this->empleado->categoria_id,
-        'activo' => true,
-    ]);
-
-    // Crear contrato
-    $contrato = \App\Models\Contrato::create([
-        'empleado_id' => $empleado->id,
-        'tipo_contrato' => 'indefinido',
-        'fecha_inicio' => '2026-01-01',
-        'jornada_semanal_horas' => 40,
-    ]);
-
-    // Intentar eliminar manipulando Livewire
-    Livewire::actingAs($this->admin)
-        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
-        ->set('empleadoToDeleteId', $empleado->id)
-        ->set('tieneHistorialLaboral', false)
-        ->call('eliminar');
-
-    // El empleado debe seguir existiendo, pero inactivo
-    $this->assertDatabaseHas('empleados', [
-        'id' => $empleado->id,
-        'activo' => false,
-    ]);
-
-    // El contrato debe conservarse
-    $this->assertDatabaseHas('contratos', [
-        'id' => $contrato->id,
-        'empleado_id' => $empleado->id,
-    ]);
-}
-
-public function test_admin_preserves_employee_with_cost_rate(): void
-{
-    $empleado = Empleado::create([
-        'nombre' => 'Laura',
-        'apellidos' => 'Tarifa Protegida',
-        'categoria_id' => $this->empleado->categoria_id,
-        'activo' => true,
-    ]);
-
-    $tarifa = \App\Models\TarifaCoste::create([
-        'empleado_id' => $empleado->id,
-        'coste_hora' => 18.50,
-        'fecha_inicio' => '2026-01-01',
-    ]);
-
-    Livewire::actingAs($this->admin)
-        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
-        ->set('empleadoToDeleteId', $empleado->id)
-        ->set('tieneHistorialLaboral', false)
-        ->call('eliminar');
-
-    // El empleado debe conservarse, pero desactivado
-    $this->assertDatabaseHas('empleados', [
-        'id' => $empleado->id,
-        'activo' => false,
-    ]);
-
-    // La tarifa económica debe conservarse
-    $this->assertDatabaseHas('tarifas_coste', [
-        'id' => $tarifa->id,
-        'empleado_id' => $empleado->id,
-    ]);
-}
-
-public function test_admin_preserves_employee_with_user_account(): void
-{
-    // Ya tenemos un empleado vinculado a una cuenta
-    // desde el método setUp().
-
-    Livewire::actingAs($this->admin)
-        ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
-        ->set('empleadoToDeleteId', $this->empleado->id)
-        ->set('tieneHistorialLaboral', false)
-        ->call('eliminar');
-
-    // El empleado debe conservarse, pero inactivo.
-    $this->assertDatabaseHas('empleados', [
-        'id' => $this->empleado->id,
-        'activo' => false,
-    ]);
-
-    // La cuenta debe seguir vinculada al empleado.
-    $this->assertDatabaseHas('users', [
-        'id' => $this->employeeUser->id,
-        'employee_id' => $this->empleado->id,
-    ]);
-}
-
-public function test_inactive_employee_can_log_in(): void
-{
-    $this->empleado->update(['activo' => false]);
-
-    $this->post('/login', [
-        'email' => $this->employeeUser->email,
-        'password' => 'password123',
-    ]);
-
-    $this->assertAuthenticatedAs($this->employeeUser);
-}
-
-public function test_blocked_user_cannot_log_in(): void
-{
-    // Bloqueamos la cuenta, no al empleado
-    $this->employeeUser->update(['activo' => false]);
-
-    // Intentamos iniciar sesión
-    $this->post('/login', [
-        'email' => $this->employeeUser->email,
-        'password' => 'password123',
-    ]);
-
-    // El usuario debe permanecer sin autenticar
-    $this->assertGuest();
-}
-
-public function test_blocked_user_loses_active_session(): void
-{
-    // El empleado inicia sesión normalmente
-    $this->post('/login', [
-        'email' => $this->employeeUser->email,
-        'password' => 'password123',
-    ]);
-
-    $this->assertAuthenticatedAs($this->employeeUser);
-
-    // Un administrador bloquea su cuenta
-    $this->employeeUser->update(['activo' => false]);
-
-    // El empleado intenta seguir utilizando MiTa
-    $this->get('/dashboard')
-        ->assertRedirect('/login');
-
-    // Su sesión debe quedar cerrada
-    $this->assertGuest();
-}
-
-public function test_admin_can_block_and_unblock_user(): void
-{
-    // Bloquear cuenta
-    Livewire::actingAs($this->admin)
-        ->test(UserRoleManager::class)
-        ->call('cambiarEstadoCuenta', $this->employeeUser->id);
-
-    $this->assertDatabaseHas('users', [
-        'id' => $this->employeeUser->id,
-        'activo' => false,
-    ]);
-
-    // El empleado sigue activo laboralmente
-    $this->assertDatabaseHas('empleados', [
-        'id' => $this->empleado->id,
-        'activo' => true,
-    ]);
-
-    // Desbloquear cuenta
-    Livewire::actingAs($this->admin)
-        ->test(UserRoleManager::class)
-        ->call('cambiarEstadoCuenta', $this->employeeUser->id);
-
-    $this->assertDatabaseHas('users', [
-        'id' => $this->employeeUser->id,
-        'activo' => true,
-    ]);
-}
-
-public function test_employee_cannot_block_user_accounts(): void
-{
-    // Autenticarnos como empleado
-    $this->actingAs($this->employeeUser);
-
-    // Probar directamente la autorización del método
-    try {
-        (new UserRoleManager())
-            ->cambiarEstadoCuenta($this->admin->id);
-
-        $this->fail('La operación debería devolver 403.');
-
-    } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
-        $this->assertSame(403, $e->getStatusCode());
+    {
+        Livewire::actingAs($this->employeeUser)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->set('nombre', 'Prueba')
+            ->set('apellidos', 'No Autorizado')
+            ->set('categoria_id', $this->empleado->categoria_id)
+            ->call('guardar')
+            ->assertForbidden();
     }
 
-    // Comprobar que la cuenta no se ha bloqueado
-    $this->assertDatabaseHas('users', [
-        'id' => $this->admin->id,
-        'activo' => true,
-    ]);
-}
+    public function test_employee_cannot_edit_employee_through_livewire(): void
+    {
+        Livewire::actingAs($this->employeeUser)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->call('abrirModalEditar', $this->empleado->id)
+            ->set('nombre', 'Cambio no autorizado')
+            ->call('guardar')
+            ->assertForbidden();
 
-public function test_admin_cannot_block_own_account(): void
-{
-    Livewire::actingAs($this->admin)
-        ->test(UserRoleManager::class)
-        ->call('cambiarEstadoCuenta', $this->admin->id)
-        ->assertSet(
-            'feedbackError',
-            'No puedes modificar el estado de tu propia cuenta.'
+        $this->assertDatabaseHas('empleados', [
+            'id' => $this->empleado->id,
+            'nombre' => 'Mateo',
+        ]);
+    }
+
+    public function test_employee_cannot_delete_another_employee(): void
+    {
+        $victima = Empleado::create([
+            'nombre' => 'Elena',
+            'apellidos' => 'Protegida',
+            'categoria_id' => $this->empleado->categoria_id,
+            'activo' => true,
+        ]);
+
+        Livewire::actingAs($this->employeeUser)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->call('confirmarEliminar', $victima->id)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('empleados', [
+            'id' => $victima->id,
+        ]);
+    }
+
+
+    public function test_employee_cannot_delete_directly_through_livewire(): void
+    {
+        $victima = Empleado::create([
+            'nombre' => 'Elena',
+            'apellidos' => 'Protegida',
+            'categoria_id' => $this->empleado->categoria_id,
+            'activo' => true,
+        ]);
+
+        Livewire::actingAs($this->employeeUser)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->set('empleadoToDeleteId', $victima->id)
+            ->set('tieneHistorialLaboral', false)
+            ->call('eliminar')
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('empleados', [
+            'id' => $victima->id,
+        ]);
+    }
+
+
+    public function test_admin_cannot_delete_employee_with_contract(): void
+    {
+        // Crear empleado
+        $empleado = Empleado::create([
+            'nombre' => 'Carlos',
+            'apellidos' => 'Historial Protegido',
+            'categoria_id' => $this->empleado->categoria_id,
+            'activo' => true,
+        ]);
+
+        // Crear contrato
+        $contrato = \App\Models\Contrato::create([
+            'empleado_id' => $empleado->id,
+            'tipo_contrato' => 'indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        // Intentar eliminar manipulando Livewire
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->set('empleadoToDeleteId', $empleado->id)
+            ->set('tieneHistorialLaboral', false)
+            ->call('eliminar');
+
+        // El empleado debe seguir existiendo, pero inactivo
+        $this->assertDatabaseHas('empleados', [
+            'id' => $empleado->id,
+            'activo' => false,
+        ]);
+
+        // El contrato debe conservarse
+        $this->assertDatabaseHas('contratos', [
+            'id' => $contrato->id,
+            'empleado_id' => $empleado->id,
+        ]);
+    }
+
+    public function test_admin_preserves_employee_with_cost_rate(): void
+    {
+        $empleado = Empleado::create([
+            'nombre' => 'Laura',
+            'apellidos' => 'Tarifa Protegida',
+            'categoria_id' => $this->empleado->categoria_id,
+            'activo' => true,
+        ]);
+
+        $tarifa = \App\Models\TarifaCoste::create([
+            'empleado_id' => $empleado->id,
+            'coste_hora' => 18.50,
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->set('empleadoToDeleteId', $empleado->id)
+            ->set('tieneHistorialLaboral', false)
+            ->call('eliminar');
+
+        // El empleado debe conservarse, pero desactivado
+        $this->assertDatabaseHas('empleados', [
+            'id' => $empleado->id,
+            'activo' => false,
+        ]);
+
+        // La tarifa económica debe conservarse
+        $this->assertDatabaseHas('tarifas_coste', [
+            'id' => $tarifa->id,
+            'empleado_id' => $empleado->id,
+        ]);
+    }
+
+    public function test_admin_preserves_employee_with_user_account(): void
+    {
+        // Ya tenemos un empleado vinculado a una cuenta
+        // desde el método setUp().
+
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->set('empleadoToDeleteId', $this->empleado->id)
+            ->set('tieneHistorialLaboral', false)
+            ->call('eliminar');
+
+        // El empleado debe conservarse, pero inactivo.
+        $this->assertDatabaseHas('empleados', [
+            'id' => $this->empleado->id,
+            'activo' => false,
+        ]);
+
+        // La cuenta debe seguir vinculada al empleado.
+        $this->assertDatabaseHas('users', [
+            'id' => $this->employeeUser->id,
+            'employee_id' => $this->empleado->id,
+        ]);
+    }
+
+    public function test_inactive_employee_can_log_in(): void
+    {
+        $this->empleado->update(['activo' => false]);
+
+        $this->post('/login', [
+            'email' => $this->employeeUser->email,
+            'password' => 'password123',
+        ]);
+
+        $this->assertAuthenticatedAs($this->employeeUser);
+    }
+
+    public function test_blocked_user_cannot_log_in(): void
+    {
+        // Bloqueamos la cuenta, no al empleado
+        $this->employeeUser->update(['activo' => false]);
+
+        // Intentamos iniciar sesión
+        $this->post('/login', [
+            'email' => $this->employeeUser->email,
+            'password' => 'password123',
+        ]);
+
+        // El usuario debe permanecer sin autenticar
+        $this->assertGuest();
+    }
+
+    public function test_blocked_user_loses_active_session(): void
+    {
+        // El empleado inicia sesión normalmente
+        $this->post('/login', [
+            'email' => $this->employeeUser->email,
+            'password' => 'password123',
+        ]);
+
+        $this->assertAuthenticatedAs($this->employeeUser);
+
+        // Un administrador bloquea su cuenta
+        $this->employeeUser->update(['activo' => false]);
+
+        // El empleado intenta seguir utilizando MiTa
+        $this->get('/dashboard')
+            ->assertRedirect('/login');
+
+        // Su sesión debe quedar cerrada
+        $this->assertGuest();
+    }
+
+    public function test_admin_can_block_and_unblock_user(): void
+    {
+        // Bloquear cuenta
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('cambiarEstadoCuenta', $this->employeeUser->id);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $this->employeeUser->id,
+            'activo' => false,
+        ]);
+
+        // El empleado sigue activo laboralmente
+        $this->assertDatabaseHas('empleados', [
+            'id' => $this->empleado->id,
+            'activo' => true,
+        ]);
+
+        // Desbloquear cuenta
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('cambiarEstadoCuenta', $this->employeeUser->id);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $this->employeeUser->id,
+            'activo' => true,
+        ]);
+    }
+
+    public function test_employee_cannot_block_user_accounts(): void
+    {
+        // Autenticarnos como empleado
+        $this->actingAs($this->employeeUser);
+
+        // Probar directamente la autorización del método
+        try {
+            (new UserRoleManager())
+                ->cambiarEstadoCuenta($this->admin->id);
+
+            $this->fail('La operación debería devolver 403.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+
+        // Comprobar que la cuenta no se ha bloqueado
+        $this->assertDatabaseHas('users', [
+            'id' => $this->admin->id,
+            'activo' => true,
+        ]);
+    }
+
+    public function test_admin_cannot_block_own_account(): void
+    {
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('cambiarEstadoCuenta', $this->admin->id)
+            ->assertSet(
+                'feedbackError',
+                'No puedes modificar el estado de tu propia cuenta.'
+            );
+
+        // La cuenta debe permanecer activa.
+        $this->assertDatabaseHas('users', [
+            'id' => $this->admin->id,
+            'activo' => true,
+        ]);
+    }
+
+    public function test_system_preserves_last_active_admin(): void
+    {
+        // Crear un segundo administrador
+        $segundoAdmin = User::create([
+            'name' => 'Administrador B',
+            'email' => 'adminb@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $segundoAdmin->roles()->attach($this->roleAdmin->id);
+
+        // Administrador A bloquea a B
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('cambiarEstadoCuenta', $segundoAdmin->id);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $segundoAdmin->id,
+            'activo' => false,
+        ]);
+
+        // A intenta bloquear su propia cuenta
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('cambiarEstadoCuenta', $this->admin->id)
+            ->assertSet(
+                'feedbackError',
+                'No puedes modificar el estado de tu propia cuenta.'
+            );
+
+        // Debe permanecer al menos un administrador activo
+        $administradoresActivos = User::where('activo', true)
+            ->whereHas(
+                'roles',
+                fn($q) =>
+                $q->where('name', Role::ADMIN)
+            )
+            ->count();
+
+        $this->assertSame(1, $administradoresActivos);
+    }
+
+
+    public function test_employee_cannot_publish_shifts(): void
+    {
+        Livewire::actingAs($this->employeeUser)
+            ->test(\App\Livewire\Roster\ShiftManager::class)
+            ->call('publicarBorradores')
+            ->assertForbidden();
+    }
+
+    public function publish(User $user): bool
+    {
+        return $user->hasRole(Role::PLANNER);
+    }
+
+    public function test_employee_cannot_access_hr_employee_file(): void
+    {
+        // Un empleado normal intenta entrar en la ficha de RR. HH.
+        $this->actingAs($this->employeeUser)
+            ->get(route('rrhh.empleados.show', [
+                'id' => $this->empleado->id,
+            ]))
+            ->assertForbidden();
+
+        // El administrador sí debe poder acceder.
+        $this->actingAs($this->admin)
+            ->get(route('rrhh.empleados.show', [
+                'id' => $this->empleado->id,
+            ]))
+            ->assertOk();
+    }
+
+    public function test_planner_cannot_create_employee_contract(): void
+    {
+        // Crear usuario con rol planificador.
+        $rolePlanner = Role::create([
+            'name' => Role::PLANNER,
+            'display_name' => 'Planificador',
+            'description' => 'Gestión de planificación',
+        ]);
+
+        $planner = User::create([
+            'name' => 'Usuario Planificador',
+            'email' => 'planner@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rolePlanner->id);
+
+        // Intentar crear un contrato desde Livewire.
+        Livewire::actingAs($planner)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('fecha_inicio', '2026-10-01')
+            ->call('guardarContrato')
+            ->assertForbidden();
+
+        // Verificar que no se haya creado el contrato.
+        $this->assertDatabaseMissing('contratos', [
+            'empleado_id' => $this->empleado->id,
+            'fecha_inicio' => '2026-10-01',
+        ]);
+    }
+
+    public function test_planner_cannot_delete_employee_contract(): void
+    {
+        // Crear un contrato existente.
+        $contrato = \App\Models\Contrato::create([
+            'empleado_id' => $this->empleado->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        // Crear usuario planificador.
+        $rolePlanner = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            [
+                'display_name' => 'Planificador',
+                'description' => 'Gestión de planificación',
+            ]
         );
 
-    // La cuenta debe permanecer activa.
-    $this->assertDatabaseHas('users', [
-        'id' => $this->admin->id,
-        'activo' => true,
-    ]);
-}
+        $planner = User::create([
+            'name' => 'Planificador Prueba',
+            'email' => 'planner-delete@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
 
-public function test_system_preserves_last_active_admin(): void
-{
-    // Crear un segundo administrador
-    $segundoAdmin = User::create([
-        'name' => 'Administrador B',
-        'email' => 'adminb@mita.es',
-        'password' => bcrypt('password123'),
-    ]);
+        $planner->roles()->attach($rolePlanner->id);
 
-    $segundoAdmin->roles()->attach($this->roleAdmin->id);
+        // Intentar eliminar el contrato desde Livewire.
+        $resultado = Livewire::actingAs($planner)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->call('eliminarContrato', $contrato->id);
 
-    // Administrador A bloquea a B
-    Livewire::actingAs($this->admin)
-        ->test(UserRoleManager::class)
-        ->call('cambiarEstadoCuenta', $segundoAdmin->id);
+        // El contrato debe seguir existiendo.
+        $this->assertDatabaseHas('contratos', [
+            'id' => $contrato->id,
+            'empleado_id' => $this->empleado->id,
+        ]);
 
-    $this->assertDatabaseHas('users', [
-        'id' => $segundoAdmin->id,
-        'activo' => false,
-    ]);
+        // El planificador debe recibir un 403.
+        $resultado->assertForbidden();
+    }
 
-    // A intenta bloquear su propia cuenta
-    Livewire::actingAs($this->admin)
-        ->test(UserRoleManager::class)
-        ->call('cambiarEstadoCuenta', $this->admin->id)
-        ->assertSet(
-            'feedbackError',
-            'No puedes modificar el estado de tu propia cuenta.'
+    public function test_planner_cannot_create_employee_absence(): void
+    {
+        // Crear usuario planificador.
+        $rolePlanner = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            [
+                'display_name' => 'Planificador',
+                'description' => 'Gestión de planificación',
+            ]
         );
 
-    // Debe permanecer al menos un administrador activo
-    $administradoresActivos = User::where('activo', true)
-        ->whereHas('roles', fn ($q) =>
-            $q->where('name', Role::ADMIN)
-        )
-        ->count();
+        $planner = User::create([
+            'name' => 'Planificador Ausencias',
+            'email' => 'planner-ausencia@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
 
-    $this->assertSame(1, $administradoresActivos);
-}
+        $planner->roles()->attach($rolePlanner->id);
+
+        // Intentar registrar unas vacaciones desde Livewire.
+        $resultado = Livewire::actingAs($planner)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('tipo_ausencia', 'vacaciones')
+            ->set('fecha_hora_inicio', '2026-11-02 09:00:00')
+            ->set('fecha_hora_fin', '2026-11-06 18:00:00')
+            ->call('guardarAusencia');
+
+        // No debe registrarse ninguna ausencia.
+        $this->assertDatabaseMissing('ausencias', [
+            'empleado_id' => $this->empleado->id,
+            'tipo' => 'vacaciones',
+            'estado' => \App\Models\Ausencia::ESTADO_APROBADA,
+        ]);
+
+        // El planificador debe recibir un 403.
+        $resultado->assertForbidden();
+    }
+
+    public function test_planner_cannot_delete_employee_absence(): void
+    {
+        // Crear una ausencia aprobada.
+        $ausencia = \App\Models\Ausencia::create([
+            'empleado_id' => $this->empleado->id,
+            'tipo' => 'vacaciones',
+            'fecha_hora_inicio' => '2026-11-02 09:00:00',
+            'fecha_hora_fin' => '2026-11-06 18:00:00',
+            'estado' => \App\Models\Ausencia::ESTADO_APROBADA,
+            'aprobado_por' => $this->admin->id,
+            'aprobado_en' => now(),
+        ]);
+
+        // Crear usuario planificador.
+        $rolePlanner = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            [
+                'display_name' => 'Planificador',
+                'description' => 'Gestión de planificación',
+            ]
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Ausencias',
+            'email' => 'planner-delete-ausencia@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rolePlanner->id);
+
+        // Intentar eliminar la ausencia desde Livewire.
+        $resultado = Livewire::actingAs($planner)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->call('eliminarAusencia', $ausencia->id);
+
+        // La ausencia debe permanecer intacta.
+        $this->assertDatabaseHas('ausencias', [
+            'id' => $ausencia->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => \App\Models\Ausencia::ESTADO_APROBADA,
+        ]);
+
+        // El planificador debe recibir un 403.
+        $resultado->assertForbidden();
+    }
 
 
-public function test_employee_cannot_publish_shifts(): void
-{
-    Livewire::actingAs($this->employeeUser)
-        ->test(\App\Livewire\Roster\ShiftManager::class)
-        ->call('publicarBorradores')
-        ->assertForbidden();
-}
+    public function test_planner_cannot_create_employee_cost_rate(): void
+    {
+        // Crear un usuario planificador.
+        $rolePlanner = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            [
+                'display_name' => 'Planificador',
+                'description' => 'Gestión de planificación',
+            ]
+        );
 
-public function publish(User $user): bool
-{
-    return $user->hasRole(Role::PLANNER);
-}
+        $planner = User::create([
+            'name' => 'Planificador Tarifas',
+            'email' => 'planner-tarifas@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
 
+        $planner->roles()->attach($rolePlanner->id);
+
+        // Intentar asignar una tarifa de 99,99 €/hora.
+        $resultado = Livewire::actingAs($planner)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('coste_hora', 99.99)
+            ->set('tarifa_fecha_inicio', '2026-12-01')
+            ->call('guardarTarifa');
+
+        // La tarifa NO debe haberse creado.
+        $this->assertDatabaseMissing('tarifas_coste', [
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 99.99,
+            'fecha_inicio' => '2026-12-01',
+        ]);
+
+        // El planificador debe recibir un 403.
+        $resultado->assertForbidden();
+    }
+
+    public function test_planner_cannot_delete_employee_cost_rate(): void
+    {
+        // Crear una tarifa existente de 25 €/hora.
+        $tarifa = \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 25.00,
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        // Crear usuario planificador.
+        $rolePlanner = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            [
+                'display_name' => 'Planificador',
+                'description' => 'Gestión de planificación',
+            ]
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Tarifas',
+            'email' => 'planner-delete-tarifa@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rolePlanner->id);
+
+        // Intentar eliminar la tarifa desde Livewire.
+        $resultado = Livewire::actingAs($planner)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->call('eliminarTarifa', $tarifa->id);
+
+
+
+
+        // El planificador debe recibir un 403.
+        $resultado->assertForbidden();
+    }
+    public function test_admin_can_create_employee_cost_rate(): void
+    {
+        // El administrador crea una tarifa válida.
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('coste_hora', 25.50)
+            ->set('tarifa_fecha_inicio', '2026-12-01')
+            ->call('guardarTarifa')
+            ->assertHasNoErrors();
+
+        // Verificar que la tarifa se ha guardado.
+        $this->assertDatabaseHas('tarifas_coste', [
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 25.50,
+            'fecha_inicio' => '2026-12-01 00:00:00',
+        ]);
+    }
+
+    public function test_hr_can_create_employee_cost_rate(): void
+    {
+        // Crear rol RR. HH.
+        $roleHR = Role::firstOrCreate(
+            ['name' => Role::RRHH],
+            [
+                'display_name' => 'Recursos Humanos',
+                'description' => 'Gestión de personal',
+            ]
+        );
+
+        // Crear usuario de RR. HH.
+        $rrhh = User::create([
+            'name' => 'Responsable RRHH',
+            'email' => 'rrhh-tarifa@mita.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $rrhh->roles()->attach($roleHR->id);
+
+        // RR. HH. crea una tarifa.
+        Livewire::actingAs($rrhh)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('coste_hora', 22.50)
+            ->set('tarifa_fecha_inicio', '2026-12-01')
+            ->call('guardarTarifa')
+            ->assertHasNoErrors();
+
+        // Comprobar que se ha guardado correctamente.
+        $this->assertDatabaseHas('tarifas_coste', [
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 22.50,
+            'fecha_inicio' => '2026-12-01 00:00:00',
+        ]);
+    }
 }

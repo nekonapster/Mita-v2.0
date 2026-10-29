@@ -9,10 +9,13 @@ use App\Models\TarifaCoste;
 use App\Services\ShiftAssignmentValidator;
 use Carbon\Carbon;
 use Livewire\Component;
+use Illuminate\Support\Facades\Gate;
+use App\Services\EmployeeHoursSummaryService;
 
 class EmployeeShow extends Component
 {
     public Empleado $empleado;
+    public string $mesResumen = '';
     public string $activeTab = 'contratos'; // contratos, ausencias, incidencias, asignaciones, tarifas
 
     // Formulario de Contrato
@@ -42,6 +45,7 @@ class EmployeeShow extends Component
         $this->empleado = Empleado::with(['categoria', 'contratos', 'ausencias', 'incidencias', 'tarifasCoste', 'user'])->findOrFail($id);
         $this->fecha_inicio = now()->toDateString();
         $this->tarifa_fecha_inicio = now()->toDateString();
+        $this->mesResumen = now()->format('Y-m');
     }
 
     public ?string $feedbackMessage = null;
@@ -49,6 +53,9 @@ class EmployeeShow extends Component
 
     public function guardarContrato(): void
     {
+        // Solo RR. HH. y administradores pueden modificar contratos.
+        Gate::authorize('update', $this->empleado);
+
         $this->validate([
             'tipo_contrato' => 'required|string|max:100',
             'fecha_inicio' => 'required|date',
@@ -76,7 +83,14 @@ class EmployeeShow extends Component
 
     public function eliminarContrato(int $id): void
     {
+        // Comprobar permisos ANTES de intentar eliminar.
+        Gate::authorize('update', $this->empleado);
+
         try {
+            $contrato = Contrato::where('empleado_id', $this->empleado->id)
+                ->findOrFail($id);
+
+            $contrato->delete();
             $contrato = Contrato::where('empleado_id', $this->empleado->id)->findOrFail($id);
             $contrato->delete();
             $this->empleado->load('contratos');
@@ -90,6 +104,9 @@ class EmployeeShow extends Component
 
     public function guardarAusencia(): void
     {
+        // Comprobar autorización antes de registrar o aprobar ausencias.
+        Gate::authorize('update', $this->empleado);
+
         $this->validate([
             'tipo_ausencia' => 'required|in:vacaciones,baja,permiso,otro',
             'fecha_hora_inicio' => 'required|date',
@@ -122,9 +139,11 @@ class EmployeeShow extends Component
         }
         $this->feedbackError = null;
     }
-
     public function eliminarAusencia(int $id): void
     {
+        // Comprobar permisos antes de eliminar la ausencia.
+        Gate::authorize('update', $this->empleado);
+
         try {
             $ausencia = Ausencia::where('empleado_id', $this->empleado->id)->findOrFail($id);
             $inicio = $ausencia->fecha_hora_inicio;
@@ -136,7 +155,7 @@ class EmployeeShow extends Component
                 ->where('motivo_conflicto', 'like', '%Ausencia aprobada sobrevenida%')
                 ->whereHas('turno', function ($q) use ($inicio, $fin) {
                     $q->where('hora_inicio', '<', $fin)
-                      ->where('hora_fin', '>', $inicio);
+                        ->where('hora_fin', '>', $inicio);
                 })
                 ->get();
 
@@ -166,6 +185,9 @@ class EmployeeShow extends Component
 
     public function guardarTarifa(): void
     {
+        // Solo RR. HH. y administradores pueden modificar tarifas.
+        Gate::authorize('update', $this->empleado);
+
         $this->validate([
             'coste_hora' => 'required|numeric|min:0',
             'tarifa_fecha_inicio' => 'required|date',
@@ -189,6 +211,9 @@ class EmployeeShow extends Component
 
     public function eliminarTarifa(int $id): void
     {
+        // Solo RR. HH. y administradores pueden modificar tarifas.
+        Gate::authorize('update', $this->empleado);
+
         try {
             $tarifa = TarifaCoste::where('empleado_id', $this->empleado->id)->findOrFail($id);
             $tarifa->delete();
@@ -203,13 +228,35 @@ class EmployeeShow extends Component
 
     public function render()
     {
+        // Historial paginado de asignaciones.
         $asignaciones = $this->empleado->asignaciones()
             ->with(['turno.instalacion.cliente', 'turno.actividad', 'registroHora'])
             ->latest()
             ->paginate(10);
 
+        // Validar el formato del mes seleccionado.
+        $mes = preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $this->mesResumen)
+            ? $this->mesResumen
+            : now()->format('Y-m');
+
+        // Determinar el inicio y el final del mes.
+        $inicio = Carbon::createFromFormat('!Y-m', $mes)
+            ->startOfMonth();
+
+        $fin = $inicio->copy()->endOfMonth();
+
+        // Calcular las horas de este empleado.
+        $resumenHoras = app(EmployeeHoursSummaryService::class)->calcular(
+            $this->empleado,
+            $inicio->toDateString(),
+            $fin->toDateString()
+        );
+
         return view('livewire.rrhh.employee-show', [
             'asignaciones' => $asignaciones,
-        ])->layout('layouts.app', ['title' => 'Ficha: ' . $this->empleado->nombre_completo]);
+            'resumenHoras' => $resumenHoras,
+        ])->layout('layouts.app', [
+            'title' => 'Ficha: ' . $this->empleado->nombre_completo,
+        ]);
     }
 }

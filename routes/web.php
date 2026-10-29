@@ -40,7 +40,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/empleados', EmployeeIndex::class)
             ->can('viewAny', Empleado::class)
             ->name('empleados');
-        Route::get('/empleados/{id}', EmployeeShow::class)->name('empleados.show');
+        Route::get('/empleados/{id}', EmployeeShow::class)
+            ->can('viewAny', \App\Models\Empleado::class)
+            ->name('empleados.show');
         Route::get('/ausencias', AbsenceIndex::class)->name('ausencias');
         Route::get('/incidencias', IncidentIndex::class)->name('incidencias');
     });

@@ -182,4 +182,279 @@ class EconomicCalculationTest extends TestCase
         $this->assertEquals(120, $informe['coste_personal_previsto']);
         $this->assertEquals(112.50, $informe['coste_personal_real']);
     }
+
+    public function test_employee_hours_summary_calculates_individual_hours(): void
+    {
+        $servicio = new \App\Services\EmployeeHoursSummaryService();
+
+        $resumen = $servicio->calcular(
+            $this->empleado,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        // Carlos tiene 8 horas planificadas
+        $this->assertEquals(
+            8,
+            $resumen['horas_planificadas']
+        );
+
+        // Carlos ha trabajado 7,5 horas validadas
+        $this->assertEquals(
+            7.5,
+            $resumen['horas_realizadas']
+        );
+
+        // No tiene horas pendientes
+        $this->assertEquals(
+            0,
+            $resumen['horas_pendientes']
+        );
+
+        // No tiene horas canceladas
+        $this->assertEquals(
+            0,
+            $resumen['horas_canceladas']
+        );
+    }
+
+    public function test_employee_hours_are_calculated_independently(): void
+    {
+        // Permitir dos trabajadores en el turno.
+        $this->turno->update(['plazas_necesarias' => 2]);
+
+        // Crear a Ana.
+        $ana = Empleado::create([
+            'nombre' => 'Ana',
+            'apellidos' => 'Prueba',
+            'categoria_id' => $this->empleado->categoria_id,
+            'activo' => true,
+        ]);
+
+        // Asignar a Ana al mismo turno que Carlos.
+        $asignacionAna = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $ana->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Ana registra 6 horas pendientes de validar.
+        RegistroHora::create([
+            'asignacion_id' => $asignacionAna->id,
+            'inicio_real' => '2026-06-10 10:00:00',
+            'fin_real' => '2026-06-10 16:00:00',
+            'descanso_minutos' => 0,
+            'horas_computables' => 6,
+            'estado' => RegistroHora::ESTADO_PENDIENTE,
+        ]);
+
+        $servicio = new \App\Services\EmployeeHoursSummaryService();
+
+        // Calcular cada empleado por separado.
+        $carlos = $servicio->calcular(
+            $this->empleado,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        $resumenAna = $servicio->calcular(
+            $ana,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        // Carlos: 8 previstas, 7,5 validadas.
+        $this->assertEquals(8, $carlos['horas_planificadas']);
+        $this->assertEquals(7.5, $carlos['horas_realizadas']);
+        $this->assertEquals(0, $carlos['horas_pendientes']);
+
+        // Ana: 8 previstas, 6 pendientes, ninguna validada.
+        $this->assertEquals(8, $resumenAna['horas_planificadas']);
+        $this->assertEquals(0, $resumenAna['horas_realizadas']);
+        $this->assertEquals(6, $resumenAna['horas_pendientes']);
+    }
+
+    public function test_employee_hours_summary_respects_date_range(): void
+    {
+        // Crear un turno de 6 horas en julio
+        $turnoJulio = Turno::create([
+            'proyecto_id' => $this->turno->proyecto_id,
+            'instalacion_id' => $this->turno->instalacion_id,
+            'actividad_id' => $this->turno->actividad_id,
+            'categoria_id' => $this->turno->categoria_id,
+            'fecha' => '2026-07-01',
+            'hora_inicio' => Carbon::parse('2026-07-01 10:00:00'),
+            'hora_fin' => Carbon::parse('2026-07-01 16:00:00'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        // Asignar el turno a Carlos
+        $asignacion = Asignacion::create([
+            'turno_id' => $turnoJulio->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Registrar 5,5 horas validadas
+        RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => '2026-07-01 10:00:00',
+            'fin_real' => '2026-07-01 16:00:00',
+            'descanso_minutos' => 30,
+            'horas_computables' => 5.5,
+            'estado' => RegistroHora::ESTADO_VALIDADO,
+        ]);
+
+        $servicio = new \App\Services\EmployeeHoursSummaryService();
+
+        // Consultar junio
+        $junio = $servicio->calcular(
+            $this->empleado,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        // Consultar julio
+        $julio = $servicio->calcular(
+            $this->empleado,
+            '2026-07-01',
+            '2026-07-31'
+        );
+
+        // Consultar ambos meses
+        $total = $servicio->calcular(
+            $this->empleado,
+            '2026-06-01',
+            '2026-07-31'
+        );
+
+        // Comprobar junio
+        $this->assertEquals(8, $junio['horas_planificadas']);
+        $this->assertEquals(7.5, $junio['horas_realizadas']);
+
+        // Comprobar julio
+        $this->assertEquals(6, $julio['horas_planificadas']);
+        $this->assertEquals(5.5, $julio['horas_realizadas']);
+
+        // Comprobar acumulado
+        $this->assertEquals(14, $total['horas_planificadas']);
+        $this->assertEquals(13, $total['horas_realizadas']);
+    }
+
+    public function test_employee_hours_separates_cancelled_and_draft_shifts(): void
+    {
+        // Turno cancelado de 6 horas
+        $cancelado = $this->turno->replicate();
+
+        $cancelado->fill([
+            'fecha' => '2026-06-11',
+            'hora_inicio' => '2026-06-11 10:00:00',
+            'hora_fin' => '2026-06-11 16:00:00',
+            'estado' => Turno::ESTADO_CANCELADO,
+        ]);
+
+        $cancelado->save();
+
+        Asignacion::create([
+            'turno_id' => $cancelado->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
+        // Turno en borrador de 4 horas
+        $borrador = $this->turno->replicate();
+
+        $borrador->fill([
+            'fecha' => '2026-06-12',
+            'hora_inicio' => '2026-06-12 10:00:00',
+            'hora_fin' => '2026-06-12 14:00:00',
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+
+        $borrador->save();
+
+        Asignacion::create([
+            'turno_id' => $borrador->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        // Calcular resumen de junio
+        $servicio = new \App\Services\EmployeeHoursSummaryService();
+
+        $resumen = $servicio->calcular(
+            $this->empleado,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        // Solo cuentan las horas publicadas
+        $this->assertEquals(8, $resumen['horas_planificadas']);
+
+        // Horas realmente trabajadas y validadas
+        $this->assertEquals(7.5, $resumen['horas_realizadas']);
+
+        // Horas pendientes
+        $this->assertEquals(0, $resumen['horas_pendientes']);
+
+        // Horas canceladas: solo historial
+        $this->assertEquals(6, $resumen['horas_canceladas']);
+
+        // Horas todavía en borrador
+        $this->assertEquals(4, $resumen['horas_borrador']);
+    }
+
+    public function test_employee_hours_separates_validated_and_pending(): void
+    {
+        // Carlos ya tiene 8 h planificadas y 7,5 h validadas.
+        // Creamos otro turno de 4 horas.
+        $turnoPendiente = $this->turno->replicate();
+
+        $turnoPendiente->fill([
+            'fecha' => '2026-06-11',
+            'hora_inicio' => '2026-06-11 10:00:00',
+            'hora_fin' => '2026-06-11 14:00:00',
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        $turnoPendiente->save();
+
+        // Asignación del mismo trabajador
+        $asignacion = Asignacion::create([
+            'turno_id' => $turnoPendiente->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Registra 3,5 horas pendientes de validar
+        RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => '2026-06-11 10:00:00',
+            'fin_real' => '2026-06-11 14:00:00',
+            'descanso_minutos' => 30,
+            'horas_computables' => 3.5,
+            'estado' => RegistroHora::ESTADO_PENDIENTE,
+        ]);
+
+        $servicio = new \App\Services\EmployeeHoursSummaryService();
+
+        $resumen = $servicio->calcular(
+            $this->empleado,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        // 8 + 4 horas planificadas
+        $this->assertEquals(12, $resumen['horas_planificadas']);
+
+        // Solo las 7,5 horas validadas
+        $this->assertEquals(7.5, $resumen['horas_realizadas']);
+
+        // Las 3,5 horas pendientes por separado
+        $this->assertEquals(3.5, $resumen['horas_pendientes']);
+
+        $this->assertEquals(0, $resumen['horas_canceladas']);
+        $this->assertEquals(0, $resumen['horas_borrador']);
+    }
 }

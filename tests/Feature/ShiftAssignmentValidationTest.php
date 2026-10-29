@@ -536,4 +536,140 @@ class ShiftAssignmentValidationTest extends TestCase
         // Comprobar que no se creó otro registro
         $this->assertDatabaseCount('registros_horas', 1);
     }
+
+    public function test_employee_cannot_register_hours_on_cancelled_shift(): void
+    {
+        // Cancelar el turno
+        $this->turno->update([
+            'estado' => Turno::ESTADO_CANCELADO,
+        ]);
+
+        // Crear una asignación que todavía figura como confirmada
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Crear usuario vinculado al trabajador
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_cancelado@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        // Intentar registrar 8 horas en el turno cancelado
+        $resultado = \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacion->id)
+            ->set('inicio_real', '2026-06-15T10:00')
+            ->set('fin_real', '2026-06-15T18:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion');
+
+        // No deben crearse registros de horas
+        $this->assertDatabaseMissing('registros_horas', [
+            'asignacion_id' => $asignacion->id,
+        ]);
+
+        // La operación debe rechazarse
+        $resultado->assertForbidden();
+    }
+
+    public function test_employee_cannot_register_hours_on_cancelled_assignment(): void
+    {
+        // Cancelar el turno
+        $this->turno->update([
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        // Crear una asignación que todavía figura como confirmada
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
+        // Crear usuario vinculado al trabajador
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_cancelado@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        // Intentar registrar 8 horas en el turno cancelado
+        $resultado = \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacion->id)
+            ->set('inicio_real', '2026-06-15T10:00')
+            ->set('fin_real', '2026-06-15T18:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion');
+
+        // No deben crearse registros de horas
+        $this->assertDatabaseMissing('registros_horas', [
+            'asignacion_id' => $asignacion->id,
+        ]);
+
+        // La operación debe rechazarse
+        $resultado->assertForbidden();
+    }
+
+    public function test_employee_cannot_open_cancelled_assignment(): void
+{
+    // El turno está publicado
+    $this->turno->update([
+        'estado' => Turno::ESTADO_PUBLICADO,
+    ]);
+
+    // Pero la asignación está cancelada
+    $asignacion = Asignacion::create([
+        'turno_id' => $this->turno->id,
+        'empleado_id' => $this->empleado->id,
+        'estado' => Asignacion::ESTADO_CANCELADO,
+    ]);
+
+    // Crear usuario vinculado al empleado
+    $rol = \App\Models\Role::firstOrCreate(
+        ['name' => \App\Models\Role::EMPLOYEE],
+        ['display_name' => 'Empleado']
+    );
+
+    $usuario = \App\Models\User::create([
+        'name' => 'Juan',
+        'email' => 'juan_modal_cancelado@test.es',
+        'password' => bcrypt('password123'),
+        'employee_id' => $this->empleado->id,
+    ]);
+
+    $usuario->roles()->attach($rol->id);
+
+    // Intentar abrir la asignación cancelada
+    \Livewire\Livewire::actingAs($usuario)
+        ->test(\App\Livewire\Portal\EmployeePortal::class)
+        ->call('abrirModalImputar', $asignacion->id)
+        ->assertForbidden();
+
+    // La asignación permanece como historial
+    $this->assertDatabaseHas('asignaciones', [
+        'id' => $asignacion->id,
+        'estado' => Asignacion::ESTADO_CANCELADO,
+    ]);
+}
 }

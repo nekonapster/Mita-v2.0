@@ -38,6 +38,7 @@ class EmployeePortal extends Component
     public function abrirModalImputar(int $asignacionId): void
     {
         $asig = Asignacion::with('turno.instalacion')->findOrFail($asignacionId);
+
         // Impedir consultar asignaciones de otros empleados.
         $usuario = auth()->user();
 
@@ -46,6 +47,15 @@ class EmployeePortal extends Component
                 (int) $asig->empleado_id === (int) $usuario->employee_id,
             403
         );
+
+        abort_if(
+            $asig->turno?->estado === Turno::ESTADO_CANCELADO ||
+                $asig->estado === Asignacion::ESTADO_CANCELADO,
+            403,
+            'No se pueden imputar horas en turnos o asignaciones canceladas.'
+        );
+
+
         $this->asignacionSeleccionadaId = $asig->id;
         $this->turnoParaImputar = $asig->turno;
 
@@ -82,6 +92,13 @@ class EmployeePortal extends Component
             403
         );
 
+        // Impedir imputaciones en turnos o asignaciones canceladas.
+        abort_if(
+            $asignacion->turno?->estado === Turno::ESTADO_CANCELADO ||
+                $asignacion->estado === Asignacion::ESTADO_CANCELADO,
+            403,
+            'No se pueden registrar horas en turnos o asignaciones canceladas.'
+        );
 
         // Buscar un registro de horas existente.
         $registroExistente = RegistroHora::where(
