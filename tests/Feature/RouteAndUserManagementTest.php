@@ -1045,4 +1045,176 @@ class RouteAndUserManagementTest extends TestCase
         // Debe aparecer un error de vigencia.
         $resultado->assertHasErrors(['fecha_inicio']);
     }
+
+    public function test_rrhh_can_create_temporary_rate_override(): void
+    {
+        // Preparar el escenario aislado de prueba.
+        \App\Models\TarifaCoste::where(
+            'empleado_id',
+            $this->empleado->id
+        )->delete();
+
+        // Tarifa personalizada habitual.
+        \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Simular al administrador utilizando Livewire.
+        \Livewire\Livewire::actingAs($this->admin)
+            ->test(
+                \App\Livewire\Rrhh\EmployeeShow::class,
+                ['id' => $this->empleado->id]
+            )
+            ->call('abrirModalTarifa')
+            ->set('modoTarifa', 'excepcion')
+            ->set('coste_hora', 22)
+            ->set('tarifa_fecha_inicio', '2026-07-01')
+            ->set('tarifa_fecha_fin', '2026-08-31')
+            ->call('guardarTarifa')
+            ->assertHasNoErrors()
+            ->assertSet('modalTarifaOpen', false);
+
+        // Verificar que existen los tres períodos.
+        $this->assertEquals(
+            3,
+            \App\Models\TarifaCoste::where(
+                'empleado_id',
+                $this->empleado->id
+            )->count()
+        );
+
+        // Verificar la tarifa aplicable en cada período.
+        $this->assertEquals(
+            15,
+            $this->empleado->tarifaEnFecha('2026-06-30')
+        );
+
+        $this->assertEquals(
+            22,
+            $this->empleado->tarifaEnFecha('2026-07-15')
+        );
+
+        $this->assertEquals(
+            15,
+            $this->empleado->tarifaEnFecha('2026-09-01')
+        );
+    }
+
+    public function test_employee_cannot_create_temporary_rate_override(): void
+    {
+        // Crear una tarifa personalizada inicial.
+        $tarifa = \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Un empleado normal intenta crear una excepción temporal.
+        Livewire::actingAs($this->employeeUser)
+            ->test(
+                \App\Livewire\Rrhh\EmployeeShow::class,
+                ['id' => $this->empleado->id]
+            )
+            ->set('modoTarifa', 'excepcion')
+            ->set('coste_hora', 22)
+            ->set('tarifa_fecha_inicio', '2026-07-01')
+            ->set('tarifa_fecha_fin', '2026-08-31')
+            ->call('guardarTarifa')
+            ->assertForbidden();
+
+        // La tarifa original debe permanecer intacta.
+        $tarifa->refresh();
+
+        $this->assertEquals(15, $tarifa->coste_hora);
+        $this->assertNull($tarifa->fecha_fin);
+
+        // No debe haberse creado ninguna tarifa adicional.
+        $this->assertEquals(
+            1,
+            \App\Models\TarifaCoste::where(
+                'empleado_id',
+                $this->empleado->id
+            )->count()
+        );
+    }
+
+    public function test_temporary_rate_rejects_invalid_dates_without_changes(): void
+    {
+        // Tarifa original indefinida.
+        $tarifa = \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Intentar crear una excepción con fechas incorrectas.
+        Livewire::actingAs($this->admin)
+            ->test(
+                \App\Livewire\Rrhh\EmployeeShow::class,
+                ['id' => $this->empleado->id]
+            )
+            ->call('abrirModalTarifa')
+            ->set('modoTarifa', 'excepcion')
+            ->set('coste_hora', 22)
+            ->set('tarifa_fecha_inicio', '2026-07-01')
+            ->set('tarifa_fecha_fin', '2026-06-30')
+            ->call('guardarTarifa')
+            ->assertHasErrors(['tarifa_fecha_fin']);
+
+        // Verificar que la tarifa original sigue intacta.
+        $tarifa->refresh();
+
+        $this->assertEquals(15, $tarifa->coste_hora);
+        $this->assertNull($tarifa->fecha_fin);
+
+        // No debe existir ninguna tarifa adicional.
+        $this->assertEquals(
+            1,
+            \App\Models\TarifaCoste::where(
+                'empleado_id',
+                $this->empleado->id
+            )->count()
+        );
+    }
+    public function test_temporary_rate_preserves_observations(): void
+    {
+        \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        Livewire::actingAs($this->admin)
+            ->test(
+                \App\Livewire\Rrhh\EmployeeShow::class,
+                ['id' => $this->empleado->id]
+            )
+            ->call('abrirModalTarifa')
+            ->set('modoTarifa', 'excepcion')
+            ->set('coste_hora', 22)
+            ->set('tarifa_fecha_inicio', '2026-07-01')
+            ->set('tarifa_fecha_fin', '2026-08-31')
+            ->set(
+                'observaciones_tarifa',
+                'Sustitución temporal de coordinador'
+            )
+            ->call('guardarTarifa')
+            ->assertHasNoErrors();
+
+        $excepcion = \App\Models\TarifaCoste::query()
+            ->where('empleado_id', $this->empleado->id)
+            ->where('coste_hora', 22)
+            ->firstOrFail();
+
+        $this->assertSame(
+            'Sustitución temporal de coordinador',
+            $excepcion->observaciones
+        );
+    }
 }

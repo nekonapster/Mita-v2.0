@@ -35,6 +35,7 @@ class EmployeeShow extends Component
 
     // Formulario de Tarifa
     public bool $modalTarifaOpen = false;
+    public string $modoTarifa = 'normal';
     public ?float $coste_hora = null;
     public string $tarifa_fecha_inicio = '';
     public string $tarifa_fecha_fin = '';
@@ -211,6 +212,7 @@ class EmployeeShow extends Component
         $this->tarifa_fecha_inicio = now()->toDateString();
         $this->tarifa_fecha_fin = '';
         $this->observaciones_tarifa = '';
+        $this->modoTarifa = 'normal';
 
         // Limpiar errores de intentos anteriores.
         $this->resetValidation();
@@ -226,10 +228,38 @@ class EmployeeShow extends Component
         $this->validate([
             'coste_hora' => 'required|numeric|min:0',
             'tarifa_fecha_inicio' => 'required|date',
-            'tarifa_fecha_fin' => 'nullable|date|after_or_equal:tarifa_fecha_inicio',
+            'tarifa_fecha_fin' => $this->modoTarifa === 'excepcion'
+                ? 'required|date|after_or_equal:tarifa_fecha_inicio'
+                : 'nullable|date|after_or_equal:tarifa_fecha_inicio',
             'observaciones_tarifa' => 'nullable|string|max:500',
+            'modoTarifa' => 'required|in:normal,excepcion',
         ]);
 
+        // Modalidad: excepción temporal sobre tarifa individual existente.
+        if ($this->modoTarifa === 'excepcion') {
+
+            app(\App\Services\CostRatePeriodService::class)
+                ->crearExcepcionTemporalEmpleado(
+                    $this->empleado->id,
+                    (float) $this->coste_hora,
+                    $this->tarifa_fecha_inicio,
+                    $this->tarifa_fecha_fin,
+                    $this->observaciones_tarifa
+                );
+
+            $this->modalTarifaOpen = false;
+
+            $this->empleado->load('tarifasCoste');
+
+            $this->feedbackMessage =
+                'Excepción temporal registrada. '
+                . 'La tarifa anterior se recuperará automáticamente '
+                . 'al finalizar el período.';
+
+            $this->feedbackError = null;
+
+            return;
+        }
         // Comprobar que la nueva tarifa no se solapa con otra existente.
         $existeConflicto = app(
             \App\Services\CostRatePeriodService::class

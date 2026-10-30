@@ -363,8 +363,7 @@
                 <span class="text-[11px] text-slate-400">Si no tiene tarifa personalizada, se utiliza la tarifa
                     general de su categoría ({{ $empleado->categoria->nombre ?? '' }}).</span>
             </div>
-            <button wire:click="abrirModalTarifa"
-                class="text-indigo-400 hover:underline font-semibold text-xs">
+            <button wire:click="abrirModalTarifa" class="text-indigo-400 hover:underline font-semibold text-xs">
                 + Configurar tarifa personalizada
             </button>
         </div>
@@ -605,19 +604,61 @@
         <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-xs">
             <h3 class="text-base font-bold text-white mb-4">Asignar Tarifa de Coste Específica</h3>
             <form wire:submit="guardarTarifa" class="space-y-4">
-                @if ($errors->any())
-    <div class="bg-red-950/50 border border-red-500 rounded-xl p-3">
-        <p class="text-red-400 font-bold mb-2">
-            No se ha podido guardar la tarifa:
-        </p>
+                <div>
+                    <label class="block text-slate-300 font-medium mb-2">
+                        Tipo de asignación
+                    </label>
 
-        @foreach ($errors->all() as $error)
-            <p class="text-red-300 text-xs">
-                • {{ $error }}
-            </p>
-        @endforeach
-    </div>
-@endif
+                    <select wire:model.live="modoTarifa" class="w-full bg-slate-950 border border-slate-700
+               rounded-xl px-3 py-2 text-white">
+
+                        <option value="normal">
+                            Nueva tarifa personalizada
+                        </option>
+
+                        <option value="excepcion">
+                            Excepción temporal sobre tarifa existente
+                        </option>
+                    </select>
+
+                    @if ($modoTarifa === 'excepcion')
+                    <div class="mt-3 rounded-xl border border-amber-600/50
+                    bg-amber-950/30 p-3 text-amber-200">
+
+                        <p class="font-bold mb-1">
+                            ⚠️ Excepción temporal
+                        </p>
+
+                        <p>
+                            MiTa dividirá la tarifa personalizada indefinida
+                            existente en tres períodos:
+                        </p>
+
+                        <p class="mt-2">
+                            1. Tarifa original hasta el día anterior.<br>
+                            2. Nueva tarifa durante el período indicado.<br>
+                            3. Recuperación de la tarifa original al finalizar.
+                        </p>
+
+                        <p class="mt-2 font-semibold">
+                            Es obligatorio indicar una fecha de finalización.
+                        </p>
+                    </div>
+                    @endif
+                </div>
+                @if ($errors->any())
+                <div class="bg-red-950/50 border border-red-500 rounded-xl p-3">
+                    <p class="text-red-400 font-bold mb-2">
+                        No se ha podido guardar la tarifa:
+                    </p>
+
+                    @foreach ($errors->all() as $error)
+                    <p class="text-red-300 text-xs">
+                        • {{ $error }}
+                    </p>
+                    @endforeach
+                </div>
+                @endif
                 @php
                 $tarifaBase = $this->tarifaBaseCategoriaEnFecha();
                 @endphp
@@ -654,8 +695,9 @@
                     </div>
                     <div>
                         <label class="block text-slate-300 font-medium mb-1">Vigencia Hasta (Opcional)</label>
-                        <input type="date" wire:model="tarifa_fecha_fin"
-                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-cyan-500">
+                        <input type="date" wire:model="tarifa_fecha_fin" @if ($modoTarifa==='excepcion' ) required
+                            @endif class="w-full bg-slate-950 border border-slate-700
+           rounded-xl px-3 py-2 text-white">
                     </div>
                 </div>
                 <div>
