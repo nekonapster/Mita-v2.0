@@ -457,4 +457,276 @@ class EconomicCalculationTest extends TestCase
         $this->assertEquals(0, $resumen['horas_canceladas']);
         $this->assertEquals(0, $resumen['horas_borrador']);
     }
+
+    public function test_employee_inherits_category_rate_and_reverts_after_temporary_rate(): void
+    {
+        // Eliminar las tarifas del escenario inicial de prueba.
+        TarifaCoste::query()->delete();
+
+        // Tarifa general de la categoría: 15 €/hora.
+        TarifaCoste::create([
+            'categoria_id' => $this->empleado->categoria_id,
+            'empleado_id' => null,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Excepción temporal del empleado durante el verano.
+        TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'categoria_id' => null,
+            'coste_hora' => 22,
+            'fecha_inicio' => '2026-07-01',
+            'fecha_fin' => '2026-08-31',
+        ]);
+
+        // Junio: tarifa de categoría.
+        $this->assertEquals(
+            15,
+            $this->empleado->tarifaEnFecha('2026-06-30')
+        );
+
+        // Primer día de julio: tarifa personalizada.
+        $this->assertEquals(
+            22,
+            $this->empleado->tarifaEnFecha('2026-07-01')
+        );
+
+        // Último día de agosto: sigue la personalizada.
+        $this->assertEquals(
+            22,
+            $this->empleado->tarifaEnFecha('2026-08-31')
+        );
+
+        // Septiembre: vuelve automáticamente a la categoría.
+        $this->assertEquals(
+            15,
+            $this->empleado->tarifaEnFecha('2026-09-01')
+        );
+    }
+
+    public function test_project_costs_respect_temporary_employee_rates(): void
+    {
+        // Limpiar tarifas iniciales de este escenario.
+        TarifaCoste::query()->delete();
+
+        // Tarifa habitual de categoría: 15 €/hora.
+        TarifaCoste::create([
+            'categoria_id' => $this->empleado->categoria_id,
+            'empleado_id' => null,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Excepción de verano: 22 €/hora.
+        TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'categoria_id' => null,
+            'coste_hora' => 22,
+            'fecha_inicio' => '2026-07-01',
+            'fecha_fin' => '2026-08-31',
+        ]);
+
+        // El escenario inicial ya incluye un turno en junio.
+        // Añadimos otro en julio y otro en septiembre.
+        foreach (['2026-07-10', '2026-09-10'] as $fecha) {
+
+            $turno = $this->turno->replicate();
+
+            $turno->fill([
+                'fecha' => $fecha,
+                'hora_inicio' => Carbon::parse("$fecha 10:00:00"),
+                'hora_fin' => Carbon::parse("$fecha 18:00:00"),
+                'estado' => Turno::ESTADO_PUBLICADO,
+            ]);
+
+            $turno->save();
+
+            $asignacion = Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $this->empleado->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+
+            RegistroHora::create([
+                'asignacion_id' => $asignacion->id,
+                'inicio_real' => Carbon::parse("$fecha 10:00:00"),
+                'fin_real' => Carbon::parse("$fecha 18:00:00"),
+                'descanso_minutos' => 30,
+                'horas_computables' => 7.5,
+                'estado' => RegistroHora::ESTADO_VALIDADO,
+            ]);
+        }
+
+        // Consultar los costes de cada mes por separado.
+        $junio = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        $julio = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-07-01',
+            '2026-07-31'
+        );
+
+        $septiembre = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-09-01',
+            '2026-09-30'
+        );
+
+        // JUNIO: 15 €/hora.
+        $this->assertEquals(120, $junio['coste_personal_previsto']);
+        $this->assertEquals(112.5, $junio['coste_personal_real']);
+
+        // JULIO: 22 €/hora.
+        $this->assertEquals(176, $julio['coste_personal_previsto']);
+        $this->assertEquals(165, $julio['coste_personal_real']);
+
+        // SEPTIEMBRE: vuelve a 15 €/hora.
+        $this->assertEquals(120, $septiembre['coste_personal_previsto']);
+        $this->assertEquals(112.5, $septiembre['coste_personal_real']);
+    }
+
+    public function test_updating_historical_rate_recalculates_past_project_costs(): void
+    {
+        // 1. Consultar los costes originales de junio.
+        $antes = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        $this->assertEquals(120, $antes['coste_personal_previsto']);
+        $this->assertEquals(112.5, $antes['coste_personal_real']);
+
+        // 2. Modificar la tarifa histórica de 15 € a 25 €.
+        $tarifa = TarifaCoste::where(
+            'empleado_id',
+            $this->empleado->id
+        )->firstOrFail();
+
+        $tarifa->coste_hora = 25;
+        $tarifa->save();
+
+        // 3. Consultar nuevamente el mismo período.
+        $despues = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        // 4. Comprobar si los costes han cambiado.
+        $this->assertEquals(200, $despues['coste_personal_previsto']);
+        $this->assertEquals(187.5, $despues['coste_personal_real']);
+    }
+
+    public function test_temporary_override_restores_previous_employee_rate(): void
+    {
+        // El escenario inicial ya tiene una tarifa individual
+        // de 15 €/hora desde el 01/01/2026, sin fecha de fin.
+
+        $tarifaOriginal = TarifaCoste::where(
+            'empleado_id',
+            $this->empleado->id
+        )->firstOrFail();
+
+        // Crear una excepción temporal de 22 €/hora.
+        app(\App\Services\CostRatePeriodService::class)
+            ->crearExcepcionTemporalEmpleado(
+                $this->empleado->id,
+                22.0,
+                '2026-07-01',
+                '2026-08-31'
+            );
+
+        // La tarifa original debe terminar el 30 de junio.
+        $tarifaOriginal->refresh();
+
+        $this->assertEquals(
+            '2026-06-30',
+            $tarifaOriginal->fecha_fin->toDateString()
+        );
+
+        // Deben existir tres períodos.
+        $this->assertEquals(
+            3,
+            TarifaCoste::where(
+                'empleado_id',
+                $this->empleado->id
+            )->count()
+        );
+
+        // Comprobar las tarifas aplicadas.
+        $this->assertEquals(
+            15,
+            $this->empleado->tarifaEnFecha('2026-06-30')
+        );
+
+        $this->assertEquals(
+            22,
+            $this->empleado->tarifaEnFecha('2026-07-01')
+        );
+
+        $this->assertEquals(
+            22,
+            $this->empleado->tarifaEnFecha('2026-08-31')
+        );
+
+        $this->assertEquals(
+            15,
+            $this->empleado->tarifaEnFecha('2026-09-01')
+        );
+    }
+
+    public function test_temporary_override_rejects_conflicts_without_modifying_rates(): void
+    {
+        // Tarifa original: 15 €/hora desde enero.
+        $original = TarifaCoste::where(
+            'empleado_id',
+            $this->empleado->id
+        )->firstOrFail();
+
+        // Simulamos una tarifa futura que ya existe.
+        TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 30,
+            'fecha_inicio' => '2026-08-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Intentamos crear una excepción que entra en conflicto.
+        try {
+            app(\App\Services\CostRatePeriodService::class)
+                ->crearExcepcionTemporalEmpleado(
+                    $this->empleado->id,
+                    22.0,
+                    '2026-07-01',
+                    '2026-08-31'
+                );
+
+            $this->fail('Se esperaba un error por solapamiento.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->assertArrayHasKey('fecha_inicio', $e->errors());
+        }
+
+        // La tarifa original debe seguir intacta.
+        $original->refresh();
+
+        $this->assertNull($original->fecha_fin);
+        $this->assertEquals(15, $original->coste_hora);
+
+        // No se debe haber creado ninguna tarifa adicional.
+        $this->assertEquals(
+            2,
+            TarifaCoste::where(
+                'empleado_id',
+                $this->empleado->id
+            )->count()
+        );
+    }
 }

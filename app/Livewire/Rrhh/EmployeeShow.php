@@ -35,7 +35,7 @@ class EmployeeShow extends Component
 
     // Formulario de Tarifa
     public bool $modalTarifaOpen = false;
-    public float $coste_hora = 15.0;
+    public ?float $coste_hora = null;
     public string $tarifa_fecha_inicio = '';
     public string $tarifa_fecha_fin = '';
     public string $observaciones_tarifa = '';
@@ -46,6 +46,26 @@ class EmployeeShow extends Component
         $this->fecha_inicio = now()->toDateString();
         $this->tarifa_fecha_inicio = now()->toDateString();
         $this->mesResumen = now()->format('Y-m');
+    }
+
+    public function tarifaBaseCategoriaEnFecha(): ?float
+    {
+        if (! $this->empleado->categoria_id || ! $this->tarifa_fecha_inicio) {
+            return null;
+        }
+
+        $tarifa = TarifaCoste::query()
+            ->where('categoria_id', $this->empleado->categoria_id)
+            ->whereNull('empleado_id')
+            ->whereDate('fecha_inicio', '<=', $this->tarifa_fecha_inicio)
+            ->where(function ($query) {
+                $query->whereNull('fecha_fin')
+                    ->orWhereDate('fecha_fin', '>=', $this->tarifa_fecha_inicio);
+            })
+            ->orderByDesc('fecha_inicio')
+            ->first();
+
+        return $tarifa ? (float) $tarifa->coste_hora : null;
     }
 
     public ?string $feedbackMessage = null;
@@ -182,7 +202,22 @@ class EmployeeShow extends Component
             $this->feedbackMessage = null;
         }
     }
+    public function abrirModalTarifa(): void
+    {
+        Gate::authorize('update', $this->empleado);
 
+        // Limpiar los datos introducidos anteriormente.
+        $this->coste_hora = null;
+        $this->tarifa_fecha_inicio = now()->toDateString();
+        $this->tarifa_fecha_fin = '';
+        $this->observaciones_tarifa = '';
+
+        // Limpiar errores de intentos anteriores.
+        $this->resetValidation();
+
+        // Abrir el formulario limpio.
+        $this->modalTarifaOpen = true;
+    }
     public function guardarTarifa(): void
     {
         // Solo RR. HH. y administradores pueden modificar tarifas.
@@ -194,6 +229,26 @@ class EmployeeShow extends Component
             'tarifa_fecha_fin' => 'nullable|date|after_or_equal:tarifa_fecha_inicio',
             'observaciones_tarifa' => 'nullable|string|max:500',
         ]);
+
+        // Comprobar que la nueva tarifa no se solapa con otra existente.
+        $existeConflicto = app(
+            \App\Services\CostRatePeriodService::class
+        )->existeSolapamiento(
+            $this->empleado->id,
+            null,
+            $this->tarifa_fecha_inicio,
+            $this->tarifa_fecha_fin ?: null
+        );
+
+        if ($existeConflicto) {
+            $this->addError(
+                'tarifa_fecha_inicio',
+                'Ya existe una tarifa para este empleado '
+                    . 'con un período de vigencia que se solapa.'
+            );
+
+            return;
+        }
 
         TarifaCoste::create([
             'empleado_id' => $this->empleado->id,

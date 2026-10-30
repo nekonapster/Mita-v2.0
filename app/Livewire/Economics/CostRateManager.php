@@ -7,13 +7,14 @@ use App\Models\Empleado;
 use App\Models\TarifaCoste;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Illuminate\Support\Facades\Gate;
 
 class CostRateManager extends Component
 {
     use WithPagination;
 
     public string $tipoFiltro = ''; // 'empleado', 'categoria', ''
-    
+
     // Modal Crear / Editar
     public bool $modalOpen = false;
     public ?int $tarifaId = null;
@@ -57,6 +58,17 @@ class CostRateManager extends Component
 
     public function guardar(): void
     {
+        // Comprobar permisos antes de validar o guardar.
+        if ($this->tarifaId !== null) {
+            // Estamos editando una tarifa existente.
+            $tarifa = TarifaCoste::findOrFail($this->tarifaId);
+
+            Gate::authorize('update', $tarifa);
+        } else {
+            // Estamos creando una tarifa nueva.
+            Gate::authorize('create', TarifaCoste::class);
+        }
+
         $this->validate([
             'tipoAsignacion' => 'required|in:categoria,empleado',
             'categoria_id' => 'required_if:tipoAsignacion,categoria|nullable|exists:categorias,id',
@@ -68,7 +80,31 @@ class CostRateManager extends Component
         ], [
             'fecha_fin.after_or_equal' => 'La fecha de fin de vigencia no puede ser anterior a la de inicio.',
         ]);
+        $existeConflicto = app(
+            \App\Services\CostRatePeriodService::class
+        )->existeSolapamiento(
+            $this->tipoAsignacion === 'empleado'
+                ? (int) $this->empleado_id
+                : null,
 
+            $this->tipoAsignacion === 'categoria'
+                ? (int) $this->categoria_id
+                : null,
+
+            $this->fecha_inicio,
+            $this->fecha_fin ?: null,
+            $this->tarifaId
+        );
+
+        if ($existeConflicto) {
+            $this->addError(
+                'fecha_inicio',
+                'Ya existe una tarifa para este empleado o categoría '
+                    . 'con un período de vigencia que se solapa.'
+            );
+
+            return;
+        }
         TarifaCoste::updateOrCreate(
             ['id' => $this->tarifaId],
             [
@@ -108,7 +144,11 @@ class CostRateManager extends Component
         if (! $this->tarifaToDeleteId) {
             return;
         }
+        // Recuperar la tarifa que se intenta eliminar.
+        $tarifa = TarifaCoste::findOrFail($this->tarifaToDeleteId);
 
+        // Comprobar autorización antes de eliminar.
+        Gate::authorize('delete', $tarifa);
         try {
             $tarifa = TarifaCoste::findOrFail($this->tarifaToDeleteId);
             $tarifa->delete();
@@ -127,8 +167,8 @@ class CostRateManager extends Component
     public function render()
     {
         $query = TarifaCoste::with(['empleado', 'categoria'])
-            ->when($this->tipoFiltro === 'empleado', fn ($q) => $q->whereNotNull('empleado_id'))
-            ->when($this->tipoFiltro === 'categoria', fn ($q) => $q->whereNotNull('categoria_id'))
+            ->when($this->tipoFiltro === 'empleado', fn($q) => $q->whereNotNull('empleado_id'))
+            ->when($this->tipoFiltro === 'categoria', fn($q) => $q->whereNotNull('categoria_id'))
             ->orderBy('fecha_inicio', 'desc');
 
         return view('livewire.economics.cost-rate-manager', [
@@ -137,4 +177,6 @@ class CostRateManager extends Component
             'empleados' => Empleado::where('activo', true)->orderBy('nombre')->get(),
         ])->layout('layouts.app', ['title' => 'Tarifas de Coste']);
     }
+
+
 }

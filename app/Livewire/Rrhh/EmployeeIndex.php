@@ -7,6 +7,7 @@ use App\Models\Empleado;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 class EmployeeIndex extends Component
 {
@@ -32,7 +33,9 @@ class EmployeeIndex extends Component
         return [
             'nombre' => 'required|string|max:100',
             'apellidos' => 'required|string|max:100',
-            'dni_nie' => 'nullable|string|max:20|unique:empleados,dni_nie,' . $this->empleadoId,
+            'dni_nie' => 'nullable|string|max:20|unique:empleados,dni_nie,' .  $this->empleadoId === null
+            ? Rule::unique('empleados', 'dni_nie')
+            : Rule::unique('empleados', 'dni_nie')->ignore($this->empleadoId),
             'email' => 'nullable|email|max:150',
             'telefono' => 'nullable|string|max:30',
             'categoria_id' => 'required|exists:categorias,id',

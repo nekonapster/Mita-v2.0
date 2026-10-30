@@ -794,4 +794,255 @@ class RouteAndUserManagementTest extends TestCase
             'fecha_inicio' => '2026-12-01 00:00:00',
         ]);
     }
+
+    public function test_admin_can_create_employee_with_dni(): void
+    {
+        // Utilizamos la categoría existente en los datos de prueba.
+        $categoriaId = $this->empleado->categoria_id;
+
+        // El administrador crea un empleado nuevo.
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->call('abrirModalCrear')
+            ->set('nombre', 'David')
+            ->set('apellidos', 'García')
+            ->set('dni_nie', 'X6791299E')
+            ->set('categoria_id', $categoriaId)
+            ->call('guardar')
+            ->assertHasNoErrors();
+
+        // Comprobar que realmente existe en la base de datos.
+        $this->assertDatabaseHas('empleados', [
+            'nombre' => 'David',
+            'apellidos' => 'García',
+            'dni_nie' => 'X6791299E',
+            'categoria_id' => $categoriaId,
+            'activo' => true,
+        ]);
+    }
+
+    public function test_cannot_create_employee_with_duplicate_dni(): void
+    {
+        // El empleado existente ya tiene este DNI.
+        $this->empleado->update([
+            'dni_nie' => 'X1234567L',
+        ]);
+
+        $totalAntes = \App\Models\Empleado::count();
+
+        // Intentar crear otro empleado con el mismo DNI.
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
+            ->call('abrirModalCrear')
+            ->set('nombre', 'Pedro')
+            ->set('apellidos', 'Prueba')
+            ->set('dni_nie', 'X1234567L')
+            ->set('categoria_id', $this->empleado->categoria_id)
+            ->call('guardar')
+            ->assertHasErrors(['dni_nie' => 'unique']);
+
+        // No debe haberse creado otro empleado.
+        $this->assertEquals(
+            $totalAntes,
+            \App\Models\Empleado::count()
+        );
+    }
+
+    public function test_cannot_create_overlapping_employee_cost_rates(): void
+    {
+        // Pablo ya tiene una tarifa de 15 €/hora.
+        \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-10-30',
+            'fecha_fin' => null,
+        ]);
+
+        $totalAntes = \App\Models\TarifaCoste::count();
+
+        // Intentar crear otra tarifa para el mismo período.
+        $resultado = Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Economics\CostRateManager::class)
+            ->call('abrirModalCrear')
+            ->set('tipoAsignacion', 'empleado')
+            ->set('empleado_id', $this->empleado->id)
+            ->set('categoria_id', null)
+            ->set('coste_hora', 20)
+            ->set('fecha_inicio', '2026-10-30')
+            ->set('fecha_fin', '')
+            ->call('guardar');
+
+        // No debe crearse otra tarifa solapada.
+        $this->assertEquals(
+            $totalAntes,
+            \App\Models\TarifaCoste::count()
+        );
+
+        // Debe informar del conflicto de fechas.
+        $resultado->assertHasErrors(['fecha_inicio']);
+    }
+
+    public function test_employee_file_cannot_create_overlapping_cost_rates(): void
+    {
+        // Tarifa existente: 15 €/hora desde octubre.
+        \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-10-30',
+            'fecha_fin' => null,
+        ]);
+
+        $totalAntes = \App\Models\TarifaCoste::count();
+
+        // Intentar crear otra tarifa desde la ficha de RR. HH.
+        $resultado = Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('coste_hora', 20)
+            ->set('tarifa_fecha_inicio', '2026-11-01')
+            ->set('tarifa_fecha_fin', '')
+            ->call('guardarTarifa');
+
+        // No debe guardarse ninguna tarifa nueva.
+        $this->assertEquals(
+            $totalAntes,
+            \App\Models\TarifaCoste::count()
+        );
+
+        // Debe informar del solapamiento.
+        $resultado->assertHasErrors(['tarifa_fecha_inicio']);
+    }
+
+    public function test_cannot_edit_cost_rate_to_overlap_another(): void
+    {
+        // Primera tarifa: enero a junio.
+        $primera = \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-06-30',
+        ]);
+
+        // Segunda tarifa: julio en adelante.
+        $segunda = \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 20,
+            'fecha_inicio' => '2026-07-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Intentar modificar la segunda tarifa
+        // para que comience el mismo día que termina la primera.
+        $resultado = Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Economics\CostRateManager::class)
+            ->call('abrirModalEditar', $segunda->id)
+            ->set('fecha_inicio', '2026-06-30')
+            ->call('guardar');
+
+        // Debe detectar el solapamiento.
+        $resultado->assertHasErrors(['fecha_inicio']);
+
+        // La segunda tarifa debe conservar su fecha original.
+        $this->assertDatabaseHas('tarifas_coste', [
+            'id' => $segunda->id,
+            'coste_hora' => 20,
+            'fecha_inicio' => '2026-07-01 00:00:00',
+        ]);
+
+        // La primera tarifa también debe permanecer intacta.
+        $this->assertDatabaseHas('tarifas_coste', [
+            'id' => $primera->id,
+            'coste_hora' => 15,
+            'fecha_fin' => '2026-06-30 00:00:00',
+        ]);
+    }
+
+    public function test_employee_cannot_create_cost_rate_from_economics(): void
+    {
+        $totalAntes = \App\Models\TarifaCoste::count();
+
+        // Un empleado normal intenta crear una tarifa.
+        $resultado = Livewire::actingAs($this->employeeUser)
+            ->test(\App\Livewire\Economics\CostRateManager::class)
+            ->call('abrirModalCrear')
+            ->set('tipoAsignacion', 'empleado')
+            ->set('empleado_id', $this->empleado->id)
+            ->set('categoria_id', null)
+            ->set('coste_hora', 41.50)
+            ->set('fecha_inicio', '2028-01-01')
+            ->set('fecha_fin', '')
+            ->call('guardar');
+
+        // No debe crearse ninguna tarifa.
+        $this->assertSame(
+            $totalAntes,
+            \App\Models\TarifaCoste::count()
+        );
+
+        // El servidor debe denegar la operación.
+        $resultado->assertForbidden();
+    }
+
+    public function test_employee_cannot_delete_cost_rate_from_economics(): void
+    {
+        // Crear una tarifa existente.
+        $tarifa = \App\Models\TarifaCoste::create([
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 25.00,
+            'fecha_inicio' => '2028-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        // Un empleado intenta eliminarla directamente.
+        $resultado = Livewire::actingAs($this->employeeUser)
+            ->test(\App\Livewire\Economics\CostRateManager::class)
+            ->set('tarifaToDeleteId', $tarifa->id)
+            ->call('ejecutarEliminar');
+
+        // La tarifa debe permanecer en la base de datos.
+        $this->assertDatabaseHas('tarifas_coste', [
+            'id' => $tarifa->id,
+            'empleado_id' => $this->empleado->id,
+            'coste_hora' => 25.00,
+        ]);
+
+        // Laravel debe denegar la operación.
+        $resultado->assertForbidden();
+    }
+
+    public function test_cannot_create_overlapping_category_cost_rates(): void
+    {
+        // Crear tarifa general de categoría.
+        \App\Models\TarifaCoste::create([
+            'categoria_id' => $this->empleado->categoria_id,
+            'empleado_id' => null,
+            'coste_hora' => 15,
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => null,
+        ]);
+
+        $totalAntes = \App\Models\TarifaCoste::count();
+
+        // Intentar crear otra tarifa para la misma categoría.
+        $resultado = Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Economics\CostRateManager::class)
+            ->call('abrirModalCrear')
+            ->set('tipoAsignacion', 'categoria')
+            ->set('categoria_id', $this->empleado->categoria_id)
+            ->set('empleado_id', null)
+            ->set('coste_hora', 25)
+            ->set('fecha_inicio', '2026-07-01')
+            ->set('fecha_fin', '')
+            ->call('guardar');
+
+        // No debe crearse una tarifa contradictoria.
+        $this->assertEquals(
+            $totalAntes,
+            \App\Models\TarifaCoste::count()
+        );
+
+        // Debe aparecer un error de vigencia.
+        $resultado->assertHasErrors(['fecha_inicio']);
+    }
 }

@@ -37,7 +37,7 @@ class Empleado extends Model
     protected function nombreCompleto(): Attribute
     {
         return Attribute::make(
-            get: fn () => trim("{$this->nombre} {$this->apellidos}")
+            get: fn() => trim("{$this->nombre} {$this->apellidos}")
         );
     }
 
@@ -102,10 +102,10 @@ class Empleado extends Model
         $fecha = Carbon::parse($fecha)->toDateString();
 
         $tarifaEmpleado = $this->tarifasCoste()
-            ->where('fecha_inicio', '<=', $fecha)
+            ->whereDate('fecha_inicio', '<=', $fecha)
             ->where(function ($query) use ($fecha) {
                 $query->whereNull('fecha_fin')
-                    ->orWhere('fecha_fin', '>=', $fecha);
+                    ->orWhereDate('fecha_fin', '>=', $fecha);
             })
             ->first();
 
@@ -116,10 +116,10 @@ class Empleado extends Model
         if ($this->categoria_id) {
             $tarifaCategoria = TarifaCoste::where('categoria_id', $this->categoria_id)
                 ->whereNull('empleado_id')
-                ->where('fecha_inicio', '<=', $fecha)
+                ->whereDate('fecha_inicio', '<=', $fecha)
                 ->where(function ($query) use ($fecha) {
                     $query->whereNull('fecha_fin')
-                        ->orWhere('fecha_fin', '>=', $fecha);
+                        ->orWhereDate('fecha_fin', '>=', $fecha);
                 })
                 ->first();
 
