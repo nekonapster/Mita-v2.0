@@ -98,10 +98,17 @@ class ProjectIndex extends Component
 
     public function confirmarEliminar(int $id): void
     {
-        $proy = Proyecto::withCount(['necesidadesServicio', 'movimientosEconomicos'])->findOrFail($id);
+        $proy = Proyecto::withCount([
+            'necesidadesServicio',
+            'movimientosEconomicos',
+            'turnos',
+        ])->findOrFail($id);
         $this->proyectoToDeleteId = $proy->id;
         $this->proyectoToDeleteNombre = $proy->nombre;
-        $this->proyectoTieneRegistros = ($proy->necesidades_servicio_count > 0 || $proy->movimientos_economicos_count > 0);
+        $this->proyectoTieneRegistros =
+            $proy->necesidades_servicio_count > 0 ||
+            $proy->movimientos_economicos_count > 0 ||
+            $proy->turnos_count > 0;
         $this->feedbackMessage = null;
         $this->feedbackError = null;
         $this->modalDeleteOpen = true;
@@ -114,10 +121,20 @@ class ProjectIndex extends Component
         }
 
         try {
-            $proy = Proyecto::withCount(['necesidadesServicio', 'movimientosEconomicos'])->findOrFail($this->proyectoToDeleteId);
-            if ($this->proyectoTieneRegistros) {
+            $proy = Proyecto::withCount([
+                'necesidadesServicio',
+                'movimientosEconomicos',
+                'turnos',
+            ])->findOrFail($this->proyectoToDeleteId);
+
+            $tieneRegistros =
+                $proy->necesidades_servicio_count > 0 ||
+                $proy->movimientos_economicos_count > 0 ||
+                $proy->turnos_count > 0;
+
+            if ($tieneRegistros) {
                 $proy->update(['estado' => 'cancelado']);
-                $this->feedbackMessage = "El proyecto {$proy->nombre} cuenta con necesidades o registros contables; ha sido marcado como Cancelado para conservar su historial.";
+                $this->feedbackMessage = "El proyecto {$proy->nombre} tiene registros asociados (necesidades, turnos o movimientos económicos). Se ha marcado como Cancelado para conservar su historial.";
             } else {
                 $nombre = $proy->nombre;
                 $proy->instalaciones()->detach();
@@ -138,9 +155,9 @@ class ProjectIndex extends Component
     public function render()
     {
         $query = Proyecto::with(['cliente', 'instalaciones', 'necesidadesServicio'])
-            ->when($this->search, fn ($q) => $q->where('nombre', 'ilike', "%{$this->search}%"))
-            ->when($this->estadoFiltro !== '', fn ($q) => $q->where('estado', $this->estadoFiltro))
-            ->when($this->clienteFiltro, fn ($q) => $q->where('cliente_id', $this->clienteFiltro))
+            ->when($this->search, fn($q) => $q->where('nombre', 'ilike', "%{$this->search}%"))
+            ->when($this->estadoFiltro !== '', fn($q) => $q->where('estado', $this->estadoFiltro))
+            ->when($this->clienteFiltro, fn($q) => $q->where('cliente_id', $this->clienteFiltro))
             ->orderBy('fecha_inicio', 'desc');
 
         $instalacionesCliente = $this->cliente_id

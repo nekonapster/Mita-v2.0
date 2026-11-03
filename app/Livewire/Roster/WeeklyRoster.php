@@ -13,6 +13,9 @@ use App\Services\RosterService;
 use App\Services\ShiftAssignmentValidator;
 use Carbon\Carbon;
 use Livewire\Component;
+use App\Models\Role;
+use App\Services\AutomaticScheduleService;
+use Illuminate\Validation\Rule;
 
 class WeeklyRoster extends Component
 {
@@ -36,6 +39,13 @@ class WeeklyRoster extends Component
     public function mount(): void
     {
         $this->currentDate = now('Europe/Madrid')->toDateString();
+    }
+
+    public function updatedClienteId(): void
+    {
+        // Al cambiar de cliente, invalidar las selecciones anteriores.
+        $this->proyectoId = null;
+        $this->instalacionId = null;
     }
 
     public function semanaAnterior(): void
@@ -133,6 +143,90 @@ class WeeklyRoster extends Component
         }
     }
 
+    public function generarAutomaticamente(): void
+    {
+        $usuario = auth()->user();
+
+        // Solo administradores y supervisores.
+        if (
+            !$usuario ||
+            (
+                !$usuario->isAdmin()
+                && !$usuario->roles()
+                    ->where('name', Role::PLANNER)
+                    ->exists()
+            )
+        ) {
+            abort(403, 'No tienes permisos para generar cuadrantes.');
+        }
+
+        // Es obligatorio seleccionar un proyecto.
+        $this->validate([
+            'proyectoId' => [
+                'required',
+                'integer',
+                Rule::exists('proyectos', 'id')->where(
+                    fn($query) => $this->clienteId
+                        ? $query->where('cliente_id', $this->clienteId)
+                        : $query
+                ),
+            ],
+
+            'instalacionId' => [
+                'nullable',
+                'integer',
+                Rule::exists('instalaciones', 'id')->where(
+                    function ($query) {
+                        $query->whereIn(
+                            'id',
+                            \Illuminate\Support\Facades\DB::table('instalacion_proyecto')
+                                ->select('instalacion_id')
+                                ->where('proyecto_id', $this->proyectoId)
+                        );
+
+                        if ($this->clienteId) {
+                            $query->where('cliente_id', $this->clienteId);
+                        }
+                    }
+                ),
+            ],
+        ], [
+            'proyectoId.required' => 'Debes seleccionar un proyecto.',
+            'proyectoId.exists' => 'El proyecto no pertenece al cliente seleccionado.',
+            'instalacionId.exists' => 'La instalación no pertenece al proyecto seleccionado.',
+        ]);
+
+        // Determinar el período visible del cuadrante.
+        $fecha = Carbon::parse($this->currentDate, 'Europe/Madrid');
+
+        if ($this->viewMode === 'weekly') {
+            $desde = $fecha->copy()->startOfWeek();
+            $hasta = $fecha->copy()->endOfWeek();
+        } else {
+            $desde = $fecha->copy()->startOfMonth();
+            $hasta = $fecha->copy()->endOfMonth();
+        }
+
+        // Recuperar el proyecto seleccionado.
+        $proyecto = Proyecto::findOrFail($this->proyectoId);
+
+        // Ejecutar el generador automático.
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            $desde->toDateString(),
+            $hasta->toDateString(),
+            $this->instalacionId
+        );
+
+        session()->flash(
+            'success',
+            'Generación automática del cuadrante completada.'
+        );
+
+        // Próximo paso:
+        // Conectar AutomaticScheduleService.
+    }
+
     public function render()
     {
         $fechaRef = Carbon::parse($this->currentDate, 'Europe/Madrid');
@@ -176,8 +270,33 @@ class WeeklyRoster extends Component
             'fechaInicio' => $fechaInicio,
             'fechaFin' => $fechaFin,
             'clientes' => Cliente::where('activo', true)->orderBy('razon_social')->get(),
-            'instalaciones' => Instalacion::where('activo', true)->orderBy('nombre')->get(),
-            'proyectos' => Proyecto::orderBy('nombre')->get(),
+            'instalaciones' => Instalacion::query()
+                ->where('activo', true)
+
+                // Filtrar por cliente, si está seleccionado.
+                ->when(
+                    $this->clienteId,
+                    fn($query) => $query->where('cliente_id', $this->clienteId)
+                )
+
+                // Mostrar solo instalaciones asociadas al proyecto.
+                ->when(
+                    $this->proyectoId,
+                    fn($query) => $query->whereHas(
+                        'proyectos',
+                        fn($proyectos) => $proyectos->whereKey($this->proyectoId)
+                    )
+                )
+
+                ->orderBy('nombre')
+                ->get(),
+            'proyectos' => Proyecto::query()
+                ->when(
+                    $this->clienteId,
+                    fn($query) => $query->where('cliente_id', $this->clienteId)
+                )
+                ->orderBy('nombre')
+                ->get(),
             'empleados' => Empleado::where('activo', true)->orderBy('nombre')->get(),
             'categorias' => Categoria::where('activo', true)->orderBy('nombre')->get(),
         ])->layout('layouts.app', ['title' => 'Cuadrante Operativo']);

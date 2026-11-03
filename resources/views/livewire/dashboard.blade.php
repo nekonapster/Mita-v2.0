@@ -1,6 +1,6 @@
 <div class="space-y-6">
     <!-- Cabecera de Bienvenida y Resumen Rápido -->
-    <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-950 p-6 rounded-2xl border border-slate-700/60 shadow-xl relative overflow-hidden">
+  <div class="dashboard-hero bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-950 p-6 rounded-2xl border border-slate-700/60 shadow-xl relative overflow-hidden">
         <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-2">

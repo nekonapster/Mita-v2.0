@@ -1044,89 +1044,123 @@ class EconomicsDashboardTest extends TestCase
 
         $this->assertEquals(7, $historial->first()->mes);
 
-        $this->assertEquals(2026, $historial->first()->anio);   
+        $this->assertEquals(2026, $historial->first()->anio);
     }
-public function test_historial_muestra_usuario_responsable_del_cierre(): void
-{
-    $administrador = User::factory()->create([
-        'name' => 'Martín Administrador',
-    ]);
+    public function test_historial_muestra_usuario_responsable_del_cierre(): void
+    {
+        $administrador = User::factory()->create([
+            'name' => 'Martín Administrador',
+        ]);
 
-    $rol = \App\Models\Role::create([
-        'name' => \App\Models\Role::ADMIN,
-        'display_name' => 'Administrador',
-    ]);
+        $rol = \App\Models\Role::create([
+            'name' => \App\Models\Role::ADMIN,
+            'display_name' => 'Administrador',
+        ]);
 
-    $administrador->roles()->attach($rol->id);
+        $administrador->roles()->attach($rol->id);
 
-    $cliente = Cliente::create([
-        'razon_social' => 'Ayuntamiento de Pruebas',
-    ]);
+        $cliente = Cliente::create([
+            'razon_social' => 'Ayuntamiento de Pruebas',
+        ]);
 
-    $proyecto = Proyecto::create([
-        'cliente_id' => $cliente->id,
-        'nombre' => 'Piscina Municipal',
-        'fecha_inicio' => '2026-01-01',
-    ]);
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+            'fecha_inicio' => '2026-01-01',
+        ]);
 
-    $this->actingAs($administrador);
+        $this->actingAs($administrador);
 
-    app(EconomicClosingService::class)->cerrarPeriodo(
-        $proyecto,
-        2026,
-        7,
-        $administrador
-    );
+        app(EconomicClosingService::class)->cerrarPeriodo(
+            $proyecto,
+            2026,
+            7,
+            $administrador
+        );
 
- $cierre = CierreEconomico::where('proyecto_id', $proyecto->id)
-    ->where('anio', 2026)
-    ->where('mes', 7)
-    ->firstOrFail();
+        $cierre = CierreEconomico::where('proyecto_id', $proyecto->id)
+            ->where('anio', 2026)
+            ->where('mes', 7)
+            ->firstOrFail();
 
-Livewire::test(EconomicsDashboard::class)
-    ->set('proyectoSeleccionado', $proyecto->id)
-    ->assertSee('Historial de cierres económicos')
-    ->assertSee('Martín Administrador')
-    ->assertSee('Fecha del cierre')
-    ->assertSee($cierre->cerrado_en->format('d/m/Y H:i'));
+        Livewire::test(EconomicsDashboard::class)
+            ->set('proyectoSeleccionado', $proyecto->id)
+            ->assertSee('Historial de cierres económicos')
+            ->assertSee('Martín Administrador')
+            ->assertSee('Fecha del cierre')
+            ->assertSee($cierre->cerrado_en->format('d/m/Y H:i'));
     }
-public function test_historial_muestra_importes_economicos_consolidados(): void
-{
-    $administrador = User::factory()->create();
+    public function test_historial_muestra_importes_economicos_consolidados(): void
+    {
+        $administrador = User::factory()->create();
 
-    $rol = \App\Models\Role::create([
-        'name' => \App\Models\Role::ADMIN,
-        'display_name' => 'Administrador',
-    ]);
+        $rol = \App\Models\Role::create([
+            'name' => \App\Models\Role::ADMIN,
+            'display_name' => 'Administrador',
+        ]);
 
-    $administrador->roles()->attach($rol->id);
+        $administrador->roles()->attach($rol->id);
 
-    $cliente = Cliente::create([
-        'razon_social' => 'Ayuntamiento de Pruebas',
-    ]);
+        $cliente = Cliente::create([
+            'razon_social' => 'Ayuntamiento de Pruebas',
+        ]);
 
-    $proyecto = Proyecto::create([
-        'cliente_id' => $cliente->id,
-        'nombre' => 'Piscina Municipal',
-        'fecha_inicio' => '2026-01-01',
-    ]);
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+            'fecha_inicio' => '2026-01-01',
+        ]);
 
-    $this->actingAs($administrador);
+        $this->actingAs($administrador);
 
-    app(EconomicClosingService::class)->cerrarPeriodo(
-        $proyecto,
-        2026,
-        7,
-        $administrador
-    );
+        app(EconomicClosingService::class)->cerrarPeriodo(
+            $proyecto,
+            2026,
+            7,
+            $administrador
+        );
+        $cierre = CierreEconomico::where('proyecto_id', $proyecto->id)
+            ->where('anio', 2026)
+            ->where('mes', 7)
+            ->firstOrFail();
 
-    Livewire::test(EconomicsDashboard::class)
-        ->set('proyectoSeleccionado', $proyecto->id)
-        ->assertSee('Historial de cierres económicos')
-        ->assertSee('Ingresos consolidados')
-        ->assertSee('Coste personal consolidado')
-        ->assertSee('Gastos consolidados')
-        ->assertSee('Resultado consolidado');
+        $datos = $cierre->datos_consolidados;
+
+        $this->assertIsArray($datos);
+
+        foreach (
+            [
+                'ingresos_totales',
+                'coste_personal_real',
+                'gastos_adicionales',
+                'resultado_estimado',
+            ] as $campo
+        ) {
+            $this->assertArrayHasKey($campo, $datos);
+        }
+
+        $componente = Livewire::test(EconomicsDashboard::class)
+            ->set('proyectoSeleccionado', $proyecto->id);
+
+        foreach (
+            [
+                'ingresos_totales',
+                'coste_personal_real',
+                'gastos_adicionales',
+                'resultado_estimado',
+            ] as $campo
+        ) {
+            $importe = number_format((float) $datos[$campo], 2, ',', '.') . ' €';
+
+            $componente->assertSee($importe);
+        }
+
+        Livewire::test(EconomicsDashboard::class)
+            ->set('proyectoSeleccionado', $proyecto->id)
+            ->assertSee('Historial de cierres económicos')
+            ->assertSee('Ingresos consolidados')
+            ->assertSee('Coste personal consolidado')
+            ->assertSee('Gastos consolidados')
+            ->assertSee('Resultado consolidado');
+    }
 }
-
-    }

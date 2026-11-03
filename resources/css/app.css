@@ -157,4 +157,42 @@ html.light .fixed.inset-0.bg-slate-950\/80 {
     background-color: rgba(15, 23, 42, 0.45) !important;
     backdrop-filter: blur(4px) !important;
 }
+/* Panel de bienvenida: conservar contraste en ambos temas */
+html.light .dashboard-hero h1 {
+    color: #ffffff !important;
+}
+
+html.light .dashboard-hero p {
+    color: #cbd5e1 !important;
+}
+
+html.light .dashboard-hero > div > div span.text-slate-400 {
+    color: #94a3b8 !important;
+}
+/* Dashboard: panel de bienvenida en tema claro */
+html.light .dashboard-hero {
+    background: linear-gradient(
+        120deg,
+        #ffffff,
+        #f1f5f9,
+        #e0f2fe
+    ) !important;
+
+    border-color: #cbd5e1 !important;
+}
+
+/* Título */
+html.light .dashboard-hero h1 {
+    color: #0f172a !important;
+}
+
+/* Descripción */
+html.light .dashboard-hero p {
+    color: #475569 !important;
+}
+
+/* Zona horaria */
+html.light .dashboard-hero span.text-slate-400 {
+    color: #64748b !important;
+}
 
