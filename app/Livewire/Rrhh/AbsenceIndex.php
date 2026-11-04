@@ -25,6 +25,12 @@ class AbsenceIndex extends Component
 
     public function abrirModalCrear(): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh']),
+            403,
+            'No tienes permisos para registrar ausencias.'
+        );
+
         $this->reset(['empleado_id', 'observaciones']);
         $this->tipo = 'vacaciones';
         $this->fecha_hora_inicio = now()->format('Y-m-d\T09:00');
@@ -38,6 +44,11 @@ class AbsenceIndex extends Component
 
     public function registrarAusencia(): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh']),
+            403,
+            'No tienes permisos para registrar ausencias.'
+        );
         $this->validate([
             'empleado_id' => 'required|exists:empleados,id',
             'tipo' => 'required|in:vacaciones,baja,permiso,otro',
@@ -72,6 +83,12 @@ class AbsenceIndex extends Component
 
     public function aprobar(int $id): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh']),
+            403,
+            'No tienes permisos para aprobar ausencias.'
+        );
+
         $ausencia = Ausencia::findOrFail($id);
         $ausencia->update([
             'estado' => Ausencia::ESTADO_APROBADA,
@@ -92,6 +109,12 @@ class AbsenceIndex extends Component
 
     public function rechazar(int $id): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh']),
+            403,
+            'No tienes permisos para rechazar ausencias.'
+        );
+
         $ausencia = Ausencia::findOrFail($id);
         $ausencia->update([
             'estado' => Ausencia::ESTADO_RECHAZADA,
@@ -105,6 +128,11 @@ class AbsenceIndex extends Component
 
     public function eliminar(int $id): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh']),
+            403,
+            'No tienes permisos para eliminar ausencias.'
+        );
         try {
             $ausencia = Ausencia::findOrFail($id);
             $empleadoId = $ausencia->empleado_id;
@@ -112,14 +140,18 @@ class AbsenceIndex extends Component
             $fin = $ausencia->fecha_hora_fin;
 
             $ausencia->delete();
-
+            abort_unless(
+                auth()->user()?->hasRole(['admin', 'rrhh']),
+                403,
+                'No tienes permisos para rechazar ausencias.'
+            );
             // Limpiar posibles conflictos derivados de esta ausencia en turnos asignados
             $asignacionesEnConflicto = \App\Models\Asignacion::where('empleado_id', $empleadoId)
                 ->where('tiene_conflicto', true)
                 ->where('motivo_conflicto', 'like', '%Ausencia aprobada sobrevenida%')
                 ->whereHas('turno', function ($q) use ($inicio, $fin) {
                     $q->where('hora_inicio', '<', $fin)
-                      ->where('hora_fin', '>', $inicio);
+                        ->where('hora_fin', '>', $inicio);
                 })
                 ->get();
 
@@ -149,9 +181,9 @@ class AbsenceIndex extends Component
     public function render()
     {
         $query = Ausencia::with(['empleado.categoria', 'aprobador'])
-            ->when($this->estadoFiltro !== '', fn ($q) => $q->where('estado', $this->estadoFiltro))
-            ->when($this->tipoFiltro !== '', fn ($q) => $q->where('tipo', $this->tipoFiltro))
-            ->when($this->empleadoFiltro, fn ($q) => $q->where('empleado_id', $this->empleadoFiltro))
+            ->when($this->estadoFiltro !== '', fn($q) => $q->where('estado', $this->estadoFiltro))
+            ->when($this->tipoFiltro !== '', fn($q) => $q->where('tipo', $this->tipoFiltro))
+            ->when($this->empleadoFiltro, fn($q) => $q->where('empleado_id', $this->empleadoFiltro))
             ->orderByRaw("CASE WHEN estado = 'pendiente' THEN 1 ELSE 2 END")
             ->orderBy('fecha_hora_inicio', 'desc');
 

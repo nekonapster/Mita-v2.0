@@ -7,6 +7,7 @@ use App\Models\Instalacion;
 use App\Models\Proyecto;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Illuminate\Validation\Rule;
 
 class ProjectIndex extends Component
 {
@@ -67,6 +68,11 @@ class ProjectIndex extends Component
             'fecha_fin' => 'nullable|date|after_or_equal:fecha_inicio',
             'estado' => 'required|in:borrador,activo,finalizado,cancelado',
             'instalacionesSeleccionadas' => 'nullable|array',
+            'instalacionesSeleccionadas.*' => [
+                'integer',
+                Rule::exists('instalaciones', 'id')
+                    ->where('cliente_id', $this->cliente_id),
+            ],
             'observaciones' => 'nullable|string|max:500',
         ]);
 

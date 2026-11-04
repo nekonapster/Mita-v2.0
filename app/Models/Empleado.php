@@ -85,10 +85,10 @@ class Empleado extends Model
         $fin = $fechaFin ? Carbon::parse($fechaFin)->toDateString() : $inicio;
 
         return $this->contratos()
-            ->where('fecha_inicio', '<=', $fin)
-            ->where(function ($query) use ($inicio) {
+            ->where('fecha_inicio', '<=', $inicio)
+            ->where(function ($query) use ($fin) {
                 $query->whereNull('fecha_fin')
-                    ->orWhere('fecha_fin', '>=', $inicio);
+                    ->orWhere('fecha_fin', '>=', $fin);
             })
             ->exists();
     }

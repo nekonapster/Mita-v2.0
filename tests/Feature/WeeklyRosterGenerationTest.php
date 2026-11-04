@@ -16,6 +16,9 @@ use App\Models\Categoria;
 use App\Models\Actividad;
 use App\Models\Turno;
 use Carbon\Carbon;
+use App\Models\Asignacion;
+use App\Models\Contrato;
+use App\Models\Empleado;
 
 class WeeklyRosterGenerationTest extends TestCase
 {
@@ -548,5 +551,263 @@ class WeeklyRosterGenerationTest extends TestCase
             ->set('viewMode', 'monthly')
             ->set('currentDate', '2026-06-15')
             ->assertSeeHtml('wire:click="abrirModalTurno(' . $turno->id . ')"');
+    }
+
+    public function test_empleado_no_puede_asignar_personal_manualmente(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = User::factory()->create();
+        $usuario->roles()->attach($rol->id);
+
+        Livewire::actingAs($usuario)
+            ->test(WeeklyRoster::class)
+            ->call('asignarEmpleado')
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('asignaciones', 0);
+    }
+    public function test_empleado_no_puede_desasignar_personal(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = User::factory()->create();
+        $usuario->roles()->attach($rol->id);
+
+        Livewire::actingAs($usuario)
+            ->test(WeeklyRoster::class)
+            ->call('desasignarEmpleado', 999999)
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('asignaciones', 0);
+    }
+    public function test_administrador_puede_asignar_personal_manualmente(): void
+    {
+        $administrador = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+
+        $administrador->roles()->attach($rol->id);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $empleado = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $empleado->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Ayuntamiento de Mairena',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Centro Acuático Cavaleri',
+            'activo' => true,
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Campaña Socorrismo',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 12:00:00'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        Livewire::actingAs($administrador)
+            ->test(WeeklyRoster::class)
+            ->call('abrirModalTurno', $turno->id)
+            ->set('nuevoEmpleadoId', $empleado->id)
+            ->call('asignarEmpleado')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+    }
+    public function test_administrador_puede_desasignar_personal(): void
+    {
+        $administrador = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+
+        $administrador->roles()->attach($rol->id);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $empleado = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Ayuntamiento de Mairena',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Centro Acuático Cavaleri',
+            'activo' => true,
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Campaña Socorrismo',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 12:00:00'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        Livewire::actingAs($administrador)
+            ->test(WeeklyRoster::class)
+            ->call('abrirModalTurno', $turno->id)
+            ->call('desasignarEmpleado', $asignacion->id)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseMissing('asignaciones', [
+            'id' => $asignacion->id,
+        ]);
+    }
+    public function test_planificador_puede_asignar_personal(): void
+    {
+        $planificador = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planificador->roles()->attach($rol->id);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $empleado = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $empleado->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Ayuntamiento de Mairena',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Centro Acuático Cavaleri',
+            'activo' => true,
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Campaña Socorrismo',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 12:00:00'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        Livewire::actingAs($planificador)
+            ->test(WeeklyRoster::class)
+            ->call('abrirModalTurno', $turno->id)
+            ->set('nuevoEmpleadoId', $empleado->id)
+            ->call('asignarEmpleado')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
     }
 }

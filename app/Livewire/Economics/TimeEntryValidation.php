@@ -31,6 +31,11 @@ class TimeEntryValidation extends Component
 
     public function validar(int $id): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh', 'accountant']),
+            403,
+            'No tienes permisos para validar horas.'
+        );
         $registro = RegistroHora::findOrFail($id);
         $registro->update([
             'estado' => RegistroHora::ESTADO_VALIDADO,
@@ -43,6 +48,14 @@ class TimeEntryValidation extends Component
 
     public function abrirModalEditar(int $id): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh', 'accountant']),
+            403,
+            'No tienes permisos para editar registros de horas.'
+        );
+
+        $registro = RegistroHora::findOrFail($id);
+
         $registro = RegistroHora::findOrFail($id);
         $this->registroId = $registro->id;
         $this->editInicioReal = Carbon::parse($registro->inicio_real)->format('Y-m-d\TH:i');
@@ -54,6 +67,12 @@ class TimeEntryValidation extends Component
 
     public function guardarEdicion(): void
     {
+        abort_unless(
+            auth()->user()?->hasRole(['admin', 'rrhh', 'accountant']),
+            403,
+            'No tienes permisos para modificar registros de horas.'
+        );
+
         $this->validate([
             'editInicioReal' => 'required|date',
             'editFinReal' => 'required|date|after_or_equal:editInicioReal',
@@ -89,16 +108,16 @@ class TimeEntryValidation extends Component
             'asignacion.empleado',
             'validador',
         ])
-        ->when($this->estadoFiltro !== '', fn ($q) => $q->where('estado', $this->estadoFiltro))
-        ->whereHas('asignacion.turno', function ($q) {
-            if ($this->fechaDesde) {
-                $q->where('fecha', '>=', $this->fechaDesde);
-            }
-            if ($this->fechaHasta) {
-                $q->where('fecha', '<=', $this->fechaHasta);
-            }
-        })
-        ->orderBy('created_at', 'desc');
+            ->when($this->estadoFiltro !== '', fn($q) => $q->where('estado', $this->estadoFiltro))
+            ->whereHas('asignacion.turno', function ($q) {
+                if ($this->fechaDesde) {
+                    $q->where('fecha', '>=', $this->fechaDesde);
+                }
+                if ($this->fechaHasta) {
+                    $q->where('fecha', '<=', $this->fechaHasta);
+                }
+            })
+            ->orderBy('created_at', 'desc');
 
         return view('livewire.economics.time-entry-validation', [
             'registros' => $query->paginate(15),

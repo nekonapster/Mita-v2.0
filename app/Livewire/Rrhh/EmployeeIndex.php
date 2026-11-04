@@ -9,6 +9,7 @@ use Livewire\WithPagination;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
+
 class EmployeeIndex extends Component
 {
     use WithPagination;
@@ -33,9 +34,12 @@ class EmployeeIndex extends Component
         return [
             'nombre' => 'required|string|max:100',
             'apellidos' => 'required|string|max:100',
-            'dni_nie' => 'nullable|string|max:20|unique:empleados,dni_nie,' .  $this->empleadoId === null
-            ? Rule::unique('empleados', 'dni_nie')
-            : Rule::unique('empleados', 'dni_nie')->ignore($this->empleadoId),
+            'dni_nie' => [
+                'nullable',
+                'string',
+                'max:20',
+                Rule::unique('empleados', 'dni_nie')->ignore($this->empleadoId),
+            ],
             'email' => 'nullable|email|max:150',
             'telefono' => 'nullable|string|max:30',
             'categoria_id' => 'required|exists:categorias,id',
@@ -127,26 +131,26 @@ class EmployeeIndex extends Component
         }
 
         $emp = Empleado::withCount([
-        'contratos',
-        'asignaciones',
-        'ausencias',
-        'incidencias',
+            'contratos',
+            'asignaciones',
+            'ausencias',
+            'incidencias',
         ])->findOrFail($this->empleadoToDeleteId);
 
         Gate::authorize('delete', $emp);
 
         $tieneHistorialReal =
-        $emp->contratos_count > 0 ||
-        $emp->asignaciones_count > 0 ||
-        $emp->ausencias_count > 0 ||
-        $emp->incidencias_count > 0 ||
-        $emp->tarifasCoste()->exists() ||
-        $emp->user()->exists();
+            $emp->contratos_count > 0 ||
+            $emp->asignaciones_count > 0 ||
+            $emp->ausencias_count > 0 ||
+            $emp->incidencias_count > 0 ||
+            $emp->tarifasCoste()->exists() ||
+            $emp->user()->exists();
 
 
 
         try {
-            
+
             if ($tieneHistorialReal) {
                 $emp->update(['activo' => false]);
                 $this->feedbackMessage = "El empleado {$emp->nombre_completo} cuenta con historial de contratos/turnos; ha sido dado de baja (marcado como Inactivo) para preservar la integridad laboral.";
@@ -177,8 +181,8 @@ class EmployeeIndex extends Component
                         ->orWhere('email', 'ilike', "%{$this->search}%");
                 });
             })
-            ->when($this->categoriaFiltro !== '', fn ($q) => $q->where('categoria_id', $this->categoriaFiltro))
-            ->when($this->estadoFiltro !== '', fn ($q) => $q->where('activo', (bool) $this->estadoFiltro))
+            ->when($this->categoriaFiltro !== '', fn($q) => $q->where('categoria_id', $this->categoriaFiltro))
+            ->when($this->estadoFiltro !== '', fn($q) => $q->where('activo', (bool) $this->estadoFiltro))
             ->orderBy('apellidos')
             ->orderBy('nombre');
 

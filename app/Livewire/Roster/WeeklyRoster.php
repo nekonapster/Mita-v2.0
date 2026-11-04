@@ -90,6 +90,17 @@ class WeeklyRoster extends Component
 
     public function asignarEmpleado(): void
     {
+        $usuario = auth()->user();
+
+        abort_unless(
+            $usuario &&
+                (
+                    $usuario->isAdmin() ||
+                    $usuario->hasRole('planner')
+                ),
+            403,
+            'No tienes permisos para asignar empleados.'
+        );
         $this->erroresValidacion = [];
 
         if (! $this->nuevoEmpleadoId) {
@@ -121,6 +132,18 @@ class WeeklyRoster extends Component
 
     public function desasignarEmpleado(int $asignacionId): void
     {
+        $usuario = auth()->user();
+
+        abort_unless(
+            $usuario &&
+                (
+                    $usuario->isAdmin() ||
+                    $usuario->hasRole('planner')
+                ),
+            403,
+            'No tienes permisos para desasignar empleados.'
+        );
+
         try {
             $asig = Asignacion::with('registroHora')->findOrFail($asignacionId);
 

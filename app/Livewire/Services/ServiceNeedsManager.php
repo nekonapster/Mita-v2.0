@@ -12,6 +12,7 @@ use App\Services\ShiftGenerationService;
 use App\Services\ShiftSyncPreviewService;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Illuminate\Validation\Rule;
 
 class ServiceNeedsManager extends Component
 {
@@ -112,7 +113,11 @@ class ServiceNeedsManager extends Component
     {
         $this->validate([
             'proyecto_id' => 'required|exists:proyectos,id',
-            'instalacion_id' => 'required|exists:instalaciones,id',
+            'instalacion_id' => [
+                'required',
+                Rule::exists('instalacion_proyecto', 'instalacion_id')
+                    ->where('proyecto_id', $this->proyecto_id),
+            ],
             'actividad_id' => 'required|exists:actividades,id',
             'categoria_id' => 'required|exists:categorias,id',
             'fecha_inicio_vigencia' => 'required|date',
@@ -238,8 +243,8 @@ class ServiceNeedsManager extends Component
     public function render()
     {
         $query = NecesidadServicio::with(['proyecto', 'instalacion', 'actividad', 'categoria', 'turnos'])
-            ->when($this->proyectoFiltro, fn ($q) => $q->where('proyecto_id', $this->proyectoFiltro))
-            ->when($this->instalacionFiltro, fn ($q) => $q->where('instalacion_id', $this->instalacionFiltro))
+            ->when($this->proyectoFiltro, fn($q) => $q->where('proyecto_id', $this->proyectoFiltro))
+            ->when($this->instalacionFiltro, fn($q) => $q->where('instalacion_id', $this->instalacionFiltro))
             ->orderBy('id', 'desc');
 
         $proyectos = Proyecto::with('instalaciones')->get();
