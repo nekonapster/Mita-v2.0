@@ -32,7 +32,7 @@ class TimeEntryValidation extends Component
     public function validar(int $id): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh', 'accountant']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh', 'accountant']),
             403,
             'No tienes permisos para validar horas.'
         );
@@ -49,7 +49,7 @@ class TimeEntryValidation extends Component
     public function abrirModalEditar(int $id): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh', 'accountant']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh', 'accountant']),
             403,
             'No tienes permisos para editar registros de horas.'
         );
@@ -68,7 +68,7 @@ class TimeEntryValidation extends Component
     public function guardarEdicion(): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh', 'accountant']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh', 'accountant']),
             403,
             'No tienes permisos para modificar registros de horas.'
         );

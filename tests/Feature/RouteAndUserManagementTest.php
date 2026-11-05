@@ -1217,4 +1217,426 @@ class RouteAndUserManagementTest extends TestCase
             $excepcion->observaciones
         );
     }
+    public function test_crear_usuario_no_compara_id_con_cadena_vacia(): void
+    {
+        $consultas = [];
+
+        \Illuminate\Support\Facades\DB::listen(
+            function (\Illuminate\Database\Events\QueryExecuted $query) use (&$consultas) {
+                $consultas[] = [
+                    'sql' => $query->sql,
+                    'bindings' => $query->bindings,
+                ];
+            }
+        );
+
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalCrear')
+            ->set('name', 'Usuario de prueba')
+            ->set('email', 'testCuadrante@mita.com')
+            ->set('password', 'secret1234')
+            ->set('password_confirmation', 'secret1234')
+            ->set('selectedRoles', [$this->roleEmployee->id])
+            ->call('guardar')
+            ->assertHasNoErrors();
+
+        $consultasUnicidad = collect($consultas)->filter(
+            fn($consulta) =>
+            str_contains(strtolower($consulta['sql']), 'from "users"')
+                && str_contains(strtolower($consulta['sql']), 'count(')
+        );
+
+        $this->assertNotEmpty(
+            $consultasUnicidad,
+            'No se encontró la consulta de unicidad del correo.'
+        );
+
+        foreach ($consultasUnicidad as $consulta) {
+            $this->assertNotContains(
+                '',
+                $consulta['bindings'],
+                'La validación no debe comparar users.id con una cadena vacía.'
+            );
+        }
+    }
+    public function test_admin_puede_editar_usuario_conservando_email(): void
+    {
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalEditar', $this->employeeUser->id)
+            ->set('name', 'Usuario Actualizado')
+            ->call('guardar')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $this->employeeUser->id,
+            'name' => 'Usuario Actualizado',
+            'email' => $this->employeeUser->email,
+        ]);
+    }
+    public function test_admin_crea_usuario_con_email_normalizado_a_minusculas(): void
+    {
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalCrear')
+            ->set('name', 'Usuario Test')
+            ->set('email', 'TestRol@MiTa.COM')
+            ->set('password', 'secret1234')
+            ->set('password_confirmation', 'secret1234')
+            ->set('selectedRoles', [$this->roleEmployee->id])
+            ->call('guardar')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('users', [
+            'name' => 'Usuario Test',
+            'email' => 'testrol@mita.com',
+        ]);
+    }
+    public function test_no_permite_email_duplicado_con_distintas_mayusculas(): void
+    {
+        // Simulamos un usuario antiguo con el correo sin normalizar.
+        User::factory()->create([
+            'email' => 'TestRol@MiTa.COM',
+        ]);
+
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalCrear')
+            ->set('name', 'Usuario Duplicado')
+            ->set('email', 'testrol@mita.com')
+            ->set('password', 'secret1234')
+            ->set('password_confirmation', 'secret1234')
+            ->set('selectedRoles', [$this->roleEmployee->id])
+            ->call('guardar')
+            ->assertHasErrors(['email']);
+
+        // El usuario duplicado no debe crearse.
+        $this->assertDatabaseMissing('users', [
+            'name' => 'Usuario Duplicado',
+        ]);
+    }
+    public function test_usuario_puede_iniciar_sesion_con_email_en_mayusculas(): void
+    {
+        $this->employeeUser->update([
+            'email' => 'empleado@mita.com',
+        ]);
+
+        $consultas = [];
+
+        \Illuminate\Support\Facades\DB::listen(
+            function (\Illuminate\Database\Events\QueryExecuted $query) use (&$consultas) {
+                $consultas[] = [
+                    'sql' => $query->sql,
+                    'bindings' => $query->bindings,
+                ];
+            }
+        );
+
+        $this->post('/login', [
+            'email' => 'EMPLEADO@MITA.COM',
+            'password' => 'password123',
+        ]);
+
+        $this->assertAuthenticatedAs($this->employeeUser);
+
+        $consultasUsuarios = collect($consultas)->filter(
+            fn($consulta) =>
+            str_contains(strtolower($consulta['sql']), 'from "users"')
+                && str_contains(strtolower($consulta['sql']), 'lower(email)')
+        );
+
+        $this->assertNotEmpty(
+            $consultasUsuarios,
+            'No se encontró ninguna consulta de autenticación por correo.'
+        );
+
+        foreach ($consultasUsuarios as $consulta) {
+            $this->assertNotContains(
+                'EMPLEADO@MITA.COM',
+                $consulta['bindings'],
+                'La autenticación no debe buscar el correo sin normalizar.'
+            );
+        }
+    }
+    public function test_usuario_antiguo_con_email_en_mayusculas_puede_iniciar_sesion(): void
+    {
+        // Simulamos una cuenta creada antes de normalizar los correos.
+        $this->employeeUser->update([
+            'email' => 'Martin@MiTa.COM',
+        ]);
+
+        $this->post('/login', [
+            'email' => 'martin@mita.com',
+            'password' => 'password123',
+        ]);
+
+        $this->assertAuthenticatedAs($this->employeeUser);
+    }
+    public function test_admin_no_puede_quitarse_su_propio_rol_administrador(): void
+    {
+        $this->assertTrue($this->admin->isAdmin());
+
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalEditar', $this->admin->id)
+            ->set('selectedRoles', [$this->roleEmployee->id])
+            ->call('guardar');
+
+        // El administrador debe conservar su rol.
+        $this->admin->refresh()->load('roles');
+
+        $this->assertTrue(
+            $this->admin->isAdmin(),
+            'MiTa permitió que un administrador se quitara su propio rol.'
+        );
+    }
+    public function test_no_se_puede_eliminar_al_ultimo_administrador_directamente(): void
+    {
+        // El administrador de la prueba debe ser el único administrador.
+        $this->assertEquals(
+            1,
+            User::whereHas(
+                'roles',
+                fn($query) => $query->where('name', Role::ADMIN)
+            )->count()
+        );
+
+        // Simulamos una petición Livewire que evita confirmarEliminar().
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->set('userToDeleteId', $this->admin->id)
+            ->call('eliminar');
+
+        // El administrador debe continuar existiendo y conservar sus roles.
+        $this->assertDatabaseHas('users', [
+            'id' => $this->admin->id,
+        ]);
+
+        $this->admin->refresh()->load('roles');
+
+        $this->assertTrue(
+            $this->admin->isAdmin(),
+            'MiTa permitió eliminar al último administrador.'
+        );
+    }
+    public function test_superadministrador_tiene_acceso_a_todos_los_modulos(): void
+    {
+        $superadminRole = Role::firstOrCreate(
+            ['name' => 'superadmin'],
+            [
+                'display_name' => 'Superadministrador',
+                'description' => 'Control total de MiTa',
+            ]
+        );
+
+        $superadmin = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        // Le asignamos exclusivamente el rol superadmin.
+        $superadmin->roles()->sync([$superadminRole->id]);
+
+        $superadmin->refresh()->load('roles');
+
+        // Debe heredar todas las capacidades administrativas.
+        $this->assertTrue($superadmin->isAdmin());
+        $this->assertTrue($superadmin->isRrhh());
+        $this->assertTrue($superadmin->isPlanner());
+        $this->assertTrue($superadmin->isAccountant());
+    }
+    public function test_admin_no_puede_asignarse_rol_superadmin(): void
+    {
+        $superadminRole = Role::firstOrCreate(
+            ['name' => Role::SUPERADMIN],
+            ['display_name' => 'Superadministrador']
+        );
+
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalEditar', $this->admin->id)
+            ->set('selectedRoles', [
+                $this->admin->roles->first()->id,
+                $superadminRole->id,
+            ])
+            ->call('guardar');
+
+        $this->admin->refresh()->load('roles');
+
+        $this->assertFalse(
+            $this->admin->isSuperAdmin(),
+            'Un administrador consiguió elevar sus privilegios a Superadministrador.'
+        );
+    }
+    public function test_admin_no_puede_modificar_cuenta_superadmin(): void
+    {
+        $superadminRole = Role::firstOrCreate(
+            ['name' => Role::SUPERADMIN],
+            ['display_name' => 'Superadministrador']
+        );
+
+        $superadmin = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $superadmin->roles()->sync([$superadminRole->id]);
+
+        // Un administrador normal intenta modificar la cuenta propietaria.
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalEditar', $superadmin->id)
+            ->set('selectedRoles', [$this->roleEmployee->id])
+            ->set('name', 'Administrador intruso')
+            ->set('email', 'intruso@mita.com')
+            ->set('password', 'nuevaclave123')
+            ->set('password_confirmation', 'nuevaclave123')
+            ->call('guardar');
+
+        $superadmin->refresh()->load('roles');
+
+        // Ningún dato de la cuenta propietaria debe modificarse.
+        $this->assertSame('Nekonapster', $superadmin->name);
+        $this->assertSame('neko@mita.com', $superadmin->email);
+        $this->assertTrue($superadmin->isSuperAdmin());
+    }
+
+    public function test_admin_no_puede_eliminar_cuenta_superadmin(): void
+    {
+        $superadminRole = Role::firstOrCreate(
+            ['name' => Role::SUPERADMIN],
+            ['display_name' => 'Superadministrador']
+        );
+
+        $superadmin = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $superadmin->roles()->sync([$superadminRole->id]);
+
+        // Un administrador normal intenta eliminar directamente
+        // la cuenta del propietario.
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->set('userToDeleteId', $superadmin->id)
+            ->call('eliminar');
+
+        // La cuenta debe seguir existiendo y conservar sus privilegios.
+        $this->assertDatabaseHas('users', [
+            'id' => $superadmin->id,
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $superadmin->refresh()->load('roles');
+
+        $this->assertTrue(
+            $superadmin->isSuperAdmin(),
+            'MiTa permitió eliminar al Superadministrador.'
+        );
+    }
+
+    public function test_admin_no_puede_desactivar_cuenta_superadmin(): void
+    {
+        $superadminRole = Role::firstOrCreate(
+            ['name' => Role::SUPERADMIN],
+            ['display_name' => 'Superadministrador']
+        );
+
+        $superadmin = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $superadmin->roles()->sync([$superadminRole->id]);
+
+        // Un administrador normal intenta desactivar al propietario.
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('cambiarEstadoCuenta', $superadmin->id);
+
+        // Nekonapster debe seguir teniendo acceso.
+        $this->assertDatabaseHas('users', [
+            'id' => $superadmin->id,
+            'activo' => true,
+        ]);
+
+        $superadmin->refresh()->load('roles');
+
+        $this->assertTrue(
+            $superadmin->isSuperAdmin(),
+            'MiTa permitió modificar los privilegios del Superadministrador.'
+        );
+    }
+
+    public function test_superadmin_no_puede_quitarse_su_propio_rol(): void
+    {
+        $superadminRole = Role::firstOrCreate(
+            ['name' => Role::SUPERADMIN],
+            ['display_name' => 'Superadministrador']
+        );
+
+        $superadmin = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $superadmin->roles()->sync([$superadminRole->id]);
+
+        // Nekonapster intenta retirarse su propio rol.
+        Livewire::actingAs($superadmin)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalEditar', $superadmin->id)
+            ->set('selectedRoles', [
+                Role::where('name', Role::ADMIN)->firstOrFail()->id,
+            ])
+            ->call('guardar');
+
+        $superadmin->refresh()->load('roles');
+
+        $this->assertTrue(
+            $superadmin->isSuperAdmin(),
+            'MiTa permitió que el Superadministrador perdiera su propio rol.'
+        );
+    }
+    public function test_no_se_puede_asignar_superadmin_a_dos_usuarios(): void
+    {
+        $rolSuperadmin = Role::firstOrCreate(
+            ['name' => Role::SUPERADMIN],
+            ['display_name' => 'Superadministrador']
+        );
+
+        // Primer y único Superadministrador.
+        $nekonapster = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+        ]);
+
+        $nekonapster->roles()->attach($rolSuperadmin->id);
+
+        // Intentamos crear otro Superadministrador.
+        $otroUsuario = User::factory()->create();
+
+        try {
+            $otroUsuario->roles()->attach($rolSuperadmin->id);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // La base de datos ha rechazado la segunda asignación.
+        }
+
+        // Debe existir exactamente un Superadministrador.
+        $this->assertEquals(
+            1,
+            \Illuminate\Support\Facades\DB::table('role_user')
+                ->where('role_id', $rolSuperadmin->id)
+                ->count(),
+            'MiTa permitió asignar el rol Superadministrador a dos usuarios.'
+        );
+    }
 }

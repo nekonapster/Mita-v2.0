@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 
 class UserRoleManager extends Component
 {
@@ -72,9 +74,64 @@ class UserRoleManager extends Component
 
     public function guardar(): void
     {
+        // Normalizar el correo antes de validar y guardar.
+        $this->email = mb_strtolower(trim($this->email), 'UTF-8');
+
+        // Un administrador normal no puede modificar cuentas Superadmin.
+        if ($this->userId !== null && !auth()->user()?->isSuperAdmin()) {
+
+            // Consultamos el usuario real, no los roles enviados desde el formulario.
+            $usuarioEditado = User::with('roles')->findOrFail($this->userId);
+
+            if ($usuarioEditado->isSuperAdmin()) {
+                $this->addError(
+                    'selectedRoles',
+                    'No tienes permisos para modificar una cuenta Superadministrador.'
+                );
+
+                return;
+            }
+        }
+
+        // Solo un Superadministrador puede asignar el rol Superadmin.
+        if (!auth()->user()?->isSuperAdmin()) {
+
+            $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->first();
+
+            if (
+                $rolSuperadmin &&
+                in_array($rolSuperadmin->id, $this->selectedRoles)
+            ) {
+                $this->addError(
+                    'selectedRoles',
+                    'No tienes permisos para asignar el rol Superadministrador.'
+                );
+
+                return;
+            }
+        }
+
         $rules = [
             'name' => 'required|string|max:150',
-            'email' => 'required|email|max:150|unique:users,email,' . $this->userId,
+            'email' => [
+                'required',
+                'email',
+                'max:150',
+                function ($attribute, $value, $fail) {
+                    $query = DB::table('users')
+                        ->whereRaw('LOWER(email) = ?', [
+                            mb_strtolower($value, 'UTF-8'),
+                        ]);
+
+                    if ($this->userId !== null) {
+                        $query->where('id', '!=', $this->userId);
+                    }
+
+                    if ($query->exists()) {
+                        $fail('Este correo ya está registrado en el sistema.');
+                    }
+                },
+            ],
             'selectedRoles' => 'required|array|min:1',
             'selectedRoles.*' => 'exists:roles,id',
             'employee_id' => 'nullable|exists:empleados,id',
@@ -96,7 +153,47 @@ class UserRoleManager extends Component
             'password.same' => 'Las contraseñas no coinciden.',
             'selectedRoles.required' => 'Debe asignar al menos un rol al usuario.',
             'selectedRoles.min' => 'Debe asignar al menos un rol al usuario.',
+
         ]);
+
+        // Impedir que un Superadministrador se retire su propio rol.
+        if ($this->userId !== null && (int) $this->userId === (int) auth()->id()) {
+
+            $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->first();
+
+            if (
+                $rolSuperadmin &&
+                auth()->user()->isSuperAdmin() &&
+                !in_array($rolSuperadmin->id, $this->selectedRoles)
+            ) {
+                $this->addError(
+                    'selectedRoles',
+                    'No puedes quitarte tu propio rol de Superadministrador.'
+                );
+
+                return;
+            }
+        }
+
+
+        // Impedir que un administrador se retire su propio rol.
+        if ($this->userId !== null && $this->userId === auth()->id()) {
+
+            $rolAdministrador = Role::where('name', Role::ADMIN)->first();
+
+            if (
+                $rolAdministrador &&
+                auth()->user()->isAdmin() &&
+                !in_array($rolAdministrador->id, $this->selectedRoles)
+            ) {
+                $this->addError(
+                    'selectedRoles',
+                    'No puedes quitarte tu propio rol de Administrador.'
+                );
+
+                return;
+            }
+        }
 
         if ($this->userId) {
             $user = User::findOrFail($this->userId);
@@ -143,7 +240,7 @@ class UserRoleManager extends Component
 
         // Prevenir eliminar si es el único administrador
         if ($user->isAdmin()) {
-            $adminCount = User::whereHas('roles', fn ($q) => $q->where('name', Role::ADMIN))->count();
+            $adminCount = User::whereHas('roles', fn($q) => $q->where('name', Role::ADMIN))->count();
             if ($adminCount <= 1) {
                 $this->feedbackError = 'No se puede eliminar el único administrador existente del sistema.';
                 session()->flash('error', $this->feedbackError);
@@ -158,72 +255,128 @@ class UserRoleManager extends Component
 
     public function eliminar(): void
     {
+        // Verificar permisos en el servidor.
+        abort_unless(auth()->user()?->isAdmin(), 403);
+
         if (!$this->userToDeleteId) {
             return;
         }
 
+        $this->feedbackError = null;
+
+        // No permitir que un administrador elimine su propia cuenta.
+        if ((int) $this->userToDeleteId === (int) auth()->id()) {
+            $this->feedbackError = 'No puedes eliminar tu propia cuenta.';
+            return;
+        }
+
         try {
-            $user = User::findOrFail($this->userToDeleteId);
+            $user = User::with('roles')->findOrFail($this->userToDeleteId);
+
+            // Impedir que un administrador normal elimine un Superadministrador.
+            if ($user->isSuperAdmin() && !auth()->user()->isSuperAdmin()) {
+                $this->feedbackError =
+                    'No tienes permisos para eliminar una cuenta Superadministrador.';
+
+                return;
+            }
+
+            // Proteger al último administrador activo.
+            if ($user->activo && $user->isAdmin()) {
+
+                $otroAdmin = User::where('activo', true)
+                    ->where('id', '!=', $user->id)
+                    ->whereHas(
+                        'roles',
+                        fn($query) => $query->where('name', Role::ADMIN)
+                    )
+                    ->exists();
+
+                if (!$otroAdmin) {
+                    $this->feedbackError =
+                        'No puedes eliminar al último administrador activo.';
+                    return;
+                }
+            }
+
             $userName = $user->name;
-            
+
             $user->roles()->detach();
             $user->delete();
 
             $this->modalDeleteOpen = false;
             $this->reset(['userToDeleteId', 'userToDeleteName']);
-            session()->flash('success', "Usuario '{$userName}' eliminado correctamente.");
+
+            session()->flash(
+                'success',
+                "Usuario '{$userName}' eliminado correctamente."
+            );
         } catch (\Throwable $e) {
             $this->modalDeleteOpen = false;
-            $this->feedbackError = 'No se puede eliminar este usuario porque cuenta con incidencias, aprobaciones o registros históricos vinculados.';
+
+            $this->feedbackError =
+                'No se puede eliminar este usuario porque cuenta con incidencias, aprobaciones o registros históricos vinculados.';
+
             session()->flash('error', $this->feedbackError);
         }
     }
 
     public function cambiarEstadoCuenta(int $id): void
-{
-    // Solo los administradores pueden gestionar cuentas.
-    abort_unless(auth()->user()?->isAdmin(), 403);
+    {
+        // Solo los administradores pueden gestionar cuentas.
+        abort_unless(auth()->user()?->isAdmin(), 403);
 
-    $this->feedbackError = null;
+        $this->feedbackError = null;
 
-    $usuario = User::findOrFail($id);
+        $usuario = User::findOrFail($id);
 
-    // Impedir que un administrador se bloquee a sí mismo.
-    if ($usuario->id === auth()->id()) {
-        $this->feedbackError =
-            'No puedes modificar el estado de tu propia cuenta.';
-        return;
-    }
-
-    // Proteger al último administrador activo.
-    if ($usuario->activo && $usuario->isAdmin()) {
-
-        $otroAdmin = User::where('activo', true)
-            ->where('id', '!=', $usuario->id)
-            ->whereHas('roles', fn ($q) =>
-                $q->where('name', Role::ADMIN)
-            )
-            ->exists();
-
-        if (!$otroAdmin) {
+        // Un administrador normal no puede cambiar el estado
+        // de una cuenta Superadministrador.
+        if ($usuario->isSuperAdmin() && !auth()->user()->isSuperAdmin()) {
             $this->feedbackError =
-                'No puedes bloquear al último administrador activo.';
+                'No tienes permisos para modificar el estado de un Superadministrador.';
+
             return;
         }
+
+        // Impedir que un administrador se bloquee a sí mismo.
+        if ($usuario->id === auth()->id()) {
+            $this->feedbackError =
+                'No puedes modificar el estado de tu propia cuenta.';
+            return;
+        }
+
+        // Proteger al último administrador activo.
+        if ($usuario->activo && $usuario->isAdmin()) {
+
+            $otroAdmin = User::where('activo', true)
+                ->where('id', '!=', $usuario->id)
+                ->whereHas(
+                    'roles',
+                    fn($q) =>
+                    $q->where('name', Role::ADMIN)
+                )
+                ->exists();
+
+            if (!$otroAdmin) {
+                $this->feedbackError =
+                    'No puedes bloquear al último administrador activo.';
+                return;
+            }
+        }
+
+        // Alternar el estado de la cuenta.
+        $usuario->update([
+            'activo' => !$usuario->activo,
+        ]);
+
+        session()->flash(
+            'success',
+            $usuario->activo
+                ? 'Cuenta desbloqueada correctamente.'
+                : 'Cuenta bloqueada correctamente.'
+        );
     }
-
-    // Alternar el estado de la cuenta.
-    $usuario->update([
-        'activo' => !$usuario->activo,
-    ]);
-
-    session()->flash(
-        'success',
-        $usuario->activo
-            ? 'Cuenta desbloqueada correctamente.'
-            : 'Cuenta bloqueada correctamente.'
-    );
-}
 
     public function render()
     {
@@ -235,7 +388,7 @@ class UserRoleManager extends Component
                 });
             })
             ->when($this->roleFiltro !== '', function ($q) {
-                $q->whereHas('roles', fn ($r) => $r->where('roles.id', $this->roleFiltro));
+                $q->whereHas('roles', fn($r) => $r->where('roles.id', $this->roleFiltro));
             })
             ->orderBy('name');
 

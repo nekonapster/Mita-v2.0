@@ -28,12 +28,24 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Directivas Blade para roles
+        // Directivas Blade para roles.
+        // El Superadministrador puede acceder a todos los módulos.
         Blade::if('role', function (string $role) {
-            return auth()->check() && auth()->user()->hasRole($role);
+            $user = auth()->user();
+
+            return $user && (
+                $user->isSuperAdmin() ||
+                $user->hasRole($role)
+            );
         });
 
         Blade::if('hasanyrole', function (array|string $roles) {
-            return auth()->check() && auth()->user()->hasRole((array) $roles);
+            $user = auth()->user();
+
+            return $user && (
+                $user->isSuperAdmin() ||
+                $user->hasRole((array) $roles)
+            );
         });
     }
 }

@@ -63,24 +63,29 @@ class User extends Authenticatable
         return $this->roles->pluck('name')->intersect($roleNames)->isNotEmpty();
     }
 
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole(Role::SUPERADMIN);
+    }
+
     public function isAdmin(): bool
     {
-        return $this->hasRole(Role::ADMIN);
+        return $this->hasRole([Role::SUPERADMIN, Role::ADMIN]);
     }
 
     public function isRrhh(): bool
     {
-        return $this->hasRole([Role::ADMIN, Role::RRHH]);
+        return $this->hasRole([Role::SUPERADMIN, Role::ADMIN, Role::RRHH]);
     }
 
     public function isPlanner(): bool
     {
-        return $this->hasRole([Role::ADMIN, Role::PLANNER]);
+        return $this->hasRole([Role::SUPERADMIN, Role::ADMIN, Role::PLANNER]);
     }
 
     public function isAccountant(): bool
     {
-        return $this->hasRole([Role::ADMIN, Role::ACCOUNTANT]);
+        return $this->hasRole([Role::SUPERADMIN, Role::ADMIN, Role::ACCOUNTANT]);
     }
 
     public function isEmployee(): bool

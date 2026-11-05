@@ -39,30 +39,32 @@ class FortifyServiceProvider extends ServiceProvider
 
         Fortify::authenticateUsing(function (Request $request) {
 
-        $user = User::where('email', $request->input('email'))->first();
+            $user = User::whereRaw('LOWER(email) = ?', [
+                mb_strtolower(trim((string) $request->input('email')), 'UTF-8'),
+            ])->first();
 
-        // Comprobar que existe, está activo
-        // y tiene la contraseña correcta.
-        if (
-            $user &&
-            $user->activo &&
-            Hash::check((string) $request->input('password'), $user->password)
-        ) {
-            return $user;
-        }
+            // Comprobar que existe, está activo
+            // y tiene la contraseña correcta.
+            if (
+                $user &&
+                $user->activo &&
+                Hash::check((string) $request->input('password'), $user->password)
+            ) {
+                return $user;
+            }
 
-        // Rechazar autenticación
-        return null;
-    });
+            // Rechazar autenticación
+            return null;
+        });
 
-        Fortify::loginView(fn () => view('auth.login'));
-        Fortify::twoFactorChallengeView(fn () => view('auth.two-factor-challenge'));
-        Fortify::requestPasswordResetLinkView(fn () => view('auth.forgot-password'));
-        Fortify::resetPasswordView(fn ($request) => view('auth.reset-password', ['request' => $request]));
-        Fortify::confirmPasswordView(fn () => view('auth.confirm-password'));
+        Fortify::loginView(fn() => view('auth.login'));
+        Fortify::twoFactorChallengeView(fn() => view('auth.two-factor-challenge'));
+        Fortify::requestPasswordResetLinkView(fn() => view('auth.forgot-password'));
+        Fortify::resetPasswordView(fn($request) => view('auth.reset-password', ['request' => $request]));
+        Fortify::confirmPasswordView(fn() => view('auth.confirm-password'));
 
         RateLimiter::for('login', function (Request $request) {
-            $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
+            $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())) . '|' . $request->ip());
 
             return Limit::perMinute(5)->by($throttleKey);
         });
@@ -75,7 +77,7 @@ class FortifyServiceProvider extends ServiceProvider
             $credentialId = $request->input('credential.id');
 
             return Limit::perMinute(10)->by(
-                ($credentialId ?: $request->session()->getId()).'|'.$request->ip()
+                ($credentialId ?: $request->session()->getId()) . '|' . $request->ip()
             );
         });
     }

@@ -26,7 +26,7 @@ class AbsenceIndex extends Component
     public function abrirModalCrear(): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh']),
             403,
             'No tienes permisos para registrar ausencias.'
         );
@@ -45,7 +45,7 @@ class AbsenceIndex extends Component
     public function registrarAusencia(): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh']),
             403,
             'No tienes permisos para registrar ausencias.'
         );
@@ -84,7 +84,7 @@ class AbsenceIndex extends Component
     public function aprobar(int $id): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh']),
             403,
             'No tienes permisos para aprobar ausencias.'
         );
@@ -110,7 +110,7 @@ class AbsenceIndex extends Component
     public function rechazar(int $id): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh']),
             403,
             'No tienes permisos para rechazar ausencias.'
         );
@@ -129,7 +129,7 @@ class AbsenceIndex extends Component
     public function eliminar(int $id): void
     {
         abort_unless(
-            auth()->user()?->hasRole(['admin', 'rrhh']),
+            auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh']),
             403,
             'No tienes permisos para eliminar ausencias.'
         );
@@ -141,7 +141,7 @@ class AbsenceIndex extends Component
 
             $ausencia->delete();
             abort_unless(
-                auth()->user()?->hasRole(['admin', 'rrhh']),
+                auth()->user()?->hasRole(['superadmin', 'admin', 'rrhh']),
                 403,
                 'No tienes permisos para rechazar ausencias.'
             );

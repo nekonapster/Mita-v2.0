@@ -10,6 +10,7 @@ class Role extends Model
 {
     use HasFactory;
 
+    public const SUPERADMIN = 'superadmin';
     public const ADMIN = 'admin';
     public const RRHH = 'rrhh';
     public const PLANNER = 'planner';
