@@ -1639,4 +1639,93 @@ class RouteAndUserManagementTest extends TestCase
             'MiTa permitió asignar el rol Superadministrador a dos usuarios.'
         );
     }
+    public function test_no_se_puede_retirar_rol_al_unico_superadmin(): void
+    {
+        $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->firstOrFail();
+
+        $nekonapster = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $nekonapster->roles()->attach($rolSuperadmin->id);
+
+        Livewire::actingAs($nekonapster)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalEditar', $nekonapster->id)
+            ->set('selectedRoles', [
+                Role::where('name', Role::ADMIN)->firstOrFail()->id,
+            ])
+            ->call('guardar');
+
+        $nekonapster->refresh()->load('roles');
+
+        $this->assertTrue(
+            $nekonapster->isSuperAdmin(),
+            'Se permitió retirar el rol del único Superadministrador.'
+        );
+    }
+    public function test_admin_no_puede_abrir_confirmacion_eliminar_superadmin(): void
+    {
+        $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->firstOrFail();
+
+        $nekonapster = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $nekonapster->roles()->attach($rolSuperadmin->id);
+        // Debe existir más de un administrador normal.
+        $otroAdmin = User::factory()->create([
+            'activo' => true,
+        ]);
+
+        $rolAdmin = Role::where('name', Role::ADMIN)->firstOrFail();
+
+        $otroAdmin->roles()->attach($rolAdmin->id);
+
+        Livewire::actingAs($this->admin)
+            ->test(UserRoleManager::class)
+            ->call('confirmarEliminar', $nekonapster->id)
+            ->assertSet('modalDeleteOpen', false);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $nekonapster->id,
+            'activo' => true,
+        ]);
+    }
+
+    public function test_superadmin_puede_editar_sus_datos_sin_rol_admin(): void
+    {
+        $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->firstOrFail();
+
+        $nekonapster = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        // Solamente tiene el rol Superadministrador.
+        $nekonapster->roles()->sync([$rolSuperadmin->id]);
+
+        Livewire::actingAs($nekonapster)
+            ->test(UserRoleManager::class)
+            ->call('abrirModalEditar', $nekonapster->id)
+            ->set('name', 'Nekonapster MiTa')
+            ->call('guardar')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $nekonapster->id,
+            'name' => 'Nekonapster MiTa',
+            'email' => 'neko@mita.com',
+        ]);
+
+        $nekonapster->refresh()->load('roles');
+
+        $this->assertTrue($nekonapster->isSuperAdmin());
+        $this->assertFalse($nekonapster->hasRole(Role::ADMIN));
+    }
 }

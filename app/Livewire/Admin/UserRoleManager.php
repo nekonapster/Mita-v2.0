@@ -175,15 +175,15 @@ class UserRoleManager extends Component
             }
         }
 
-
-        // Impedir que un administrador se retire su propio rol.
-        if ($this->userId !== null && $this->userId === auth()->id()) {
+        // Impedir que un administrador normal se retire su propio rol.
+        if ($this->userId !== null && (int) $this->userId === (int) auth()->id()) {
 
             $rolAdministrador = Role::where('name', Role::ADMIN)->first();
 
             if (
                 $rolAdministrador &&
-                auth()->user()->isAdmin() &&
+                auth()->user()->hasRole(Role::ADMIN) &&
+                !auth()->user()->isSuperAdmin() &&
                 !in_array($rolAdministrador->id, $this->selectedRoles)
             ) {
                 $this->addError(
@@ -237,6 +237,16 @@ class UserRoleManager extends Component
         }
 
         $user = User::with('roles')->findOrFail($id);
+
+        // Impedir que un administrador normal intente eliminar al Superadministrador.
+        if ($user->isSuperAdmin() && !auth()->user()->isSuperAdmin()) {
+            $this->feedbackError =
+                'No tienes permisos para eliminar una cuenta Superadministrador.';
+
+            $this->modalDeleteOpen = false;
+
+            return;
+        }
 
         // Prevenir eliminar si es el único administrador
         if ($user->isAdmin()) {
