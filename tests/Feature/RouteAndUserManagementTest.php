@@ -1728,4 +1728,81 @@ class RouteAndUserManagementTest extends TestCase
         $this->assertTrue($nekonapster->isSuperAdmin());
         $this->assertFalse($nekonapster->hasRole(Role::ADMIN));
     }
+    public function test_no_se_puede_retirar_directamente_el_rol_superadmin(): void
+    {
+        $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->firstOrFail();
+
+        $nekonapster = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $nekonapster->roles()->attach($rolSuperadmin->id);
+
+        // Intentamos retirar el rol directamente mediante Eloquent.
+        try {
+            $nekonapster->roles()->detach($rolSuperadmin->id);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // La base de datos ha rechazado la operación.
+        }
+
+        $nekonapster->refresh()->load('roles');
+
+        $this->assertTrue(
+            $nekonapster->isSuperAdmin(),
+            'MiTa permitió retirar directamente el rol del propietario.'
+        );
+    }
+    public function test_no_se_puede_eliminar_directamente_al_superadmin(): void
+    {
+        $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->firstOrFail();
+
+        $nekonapster = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $nekonapster->roles()->attach($rolSuperadmin->id);
+
+        try {
+            // Intentamos eliminar directamente al propietario,
+            // sin pasar por las protecciones de Livewire.
+            $nekonapster->delete();
+        } catch (\Illuminate\Database\QueryException $e) {
+            // La base de datos ha rechazado la eliminación.
+        }
+
+        $this->assertDatabaseHas('users', [
+            'id' => $nekonapster->id,
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+    }
+    public function test_no_se_puede_desactivar_directamente_al_superadmin(): void
+    {
+        $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->firstOrFail();
+
+        $nekonapster = User::factory()->create([
+            'name' => 'Nekonapster',
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+
+        $nekonapster->roles()->attach($rolSuperadmin->id);
+
+        try {
+            // Intentamos desactivar al propietario directamente.
+            $nekonapster->update(['activo' => false]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // La base de datos ha rechazado la operación.
+        }
+
+        $this->assertDatabaseHas('users', [
+            'id' => $nekonapster->id,
+            'email' => 'neko@mita.com',
+            'activo' => true,
+        ]);
+    }
 }
