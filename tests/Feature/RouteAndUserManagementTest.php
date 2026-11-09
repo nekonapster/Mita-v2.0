@@ -1740,12 +1740,28 @@ class RouteAndUserManagementTest extends TestCase
 
         $nekonapster->roles()->attach($rolSuperadmin->id);
 
-        // Intentamos retirar el rol directamente mediante Eloquent.
+        $conexion = \Illuminate\Support\Facades\DB::connection();
+
+        $conexion->statement('SAVEPOINT prueba_superadmin');
+
+        $rechazada = false;
+
         try {
+            // Intentamos retirar directamente el rol protegido.
             $nekonapster->roles()->detach($rolSuperadmin->id);
         } catch (\Illuminate\Database\QueryException $e) {
-            // La base de datos ha rechazado la operación.
+            $rechazada = true;
+
+            // Recuperamos la transacción después del rechazo.
+            $conexion->statement('ROLLBACK TO SAVEPOINT prueba_superadmin');
+        } finally {
+            $conexion->statement('RELEASE SAVEPOINT prueba_superadmin');
         }
+
+        $this->assertTrue(
+            $rechazada,
+            'MiTa permitió ejecutar la retirada directa del rol superadmin.'
+        );
 
         $nekonapster->refresh()->load('roles');
 
@@ -1766,13 +1782,24 @@ class RouteAndUserManagementTest extends TestCase
 
         $nekonapster->roles()->attach($rolSuperadmin->id);
 
+        $conexion = \Illuminate\Support\Facades\DB::connection();
+        $conexion->statement('SAVEPOINT prueba_eliminar_superadmin');
+
+        $rechazada = false;
+
         try {
-            // Intentamos eliminar directamente al propietario,
-            // sin pasar por las protecciones de Livewire.
             $nekonapster->delete();
         } catch (\Illuminate\Database\QueryException $e) {
-            // La base de datos ha rechazado la eliminación.
+            $rechazada = true;
+            $conexion->statement('ROLLBACK TO SAVEPOINT prueba_eliminar_superadmin');
+        } finally {
+            $conexion->statement('RELEASE SAVEPOINT prueba_eliminar_superadmin');
         }
+
+        $this->assertTrue(
+            $rechazada,
+            'MiTa permitió eliminar directamente al superadministrador.'
+        );
 
         $this->assertDatabaseHas('users', [
             'id' => $nekonapster->id,
@@ -1780,6 +1807,7 @@ class RouteAndUserManagementTest extends TestCase
             'activo' => true,
         ]);
     }
+
     public function test_no_se_puede_desactivar_directamente_al_superadmin(): void
     {
         $rolSuperadmin = Role::where('name', Role::SUPERADMIN)->firstOrFail();
@@ -1792,12 +1820,24 @@ class RouteAndUserManagementTest extends TestCase
 
         $nekonapster->roles()->attach($rolSuperadmin->id);
 
+        $conexion = \Illuminate\Support\Facades\DB::connection();
+        $conexion->statement('SAVEPOINT prueba_desactivar_superadmin');
+
+        $rechazada = false;
+
         try {
-            // Intentamos desactivar al propietario directamente.
             $nekonapster->update(['activo' => false]);
         } catch (\Illuminate\Database\QueryException $e) {
-            // La base de datos ha rechazado la operación.
+            $rechazada = true;
+            $conexion->statement('ROLLBACK TO SAVEPOINT prueba_desactivar_superadmin');
+        } finally {
+            $conexion->statement('RELEASE SAVEPOINT prueba_desactivar_superadmin');
         }
+
+        $this->assertTrue(
+            $rechazada,
+            'MiTa permitió desactivar directamente al superadministrador.'
+        );
 
         $this->assertDatabaseHas('users', [
             'id' => $nekonapster->id,

@@ -10,7 +10,7 @@ return new class extends Migration
         if (DB::getDriverName() === 'pgsql') {
 
             DB::unprepared(<<<'SQL'
-                CREATE FUNCTION protect_superadmin_active_status()
+                CREATE OR REPLACE FUNCTION protect_superadmin_active_status()
                 RETURNS TRIGGER AS $$
                 BEGIN
                     IF OLD.activo = TRUE

@@ -22,7 +22,7 @@ return new class extends Migration
         if (DB::getDriverName() === 'pgsql') {
 
             DB::unprepared("
-                CREATE FUNCTION protect_superadmin_assignment()
+                CREATE OR REPLACE FUNCTION protect_superadmin_assignment()
                 RETURNS TRIGGER AS \$\$
                 BEGIN
                     IF OLD.role_id = {$roleId} THEN
