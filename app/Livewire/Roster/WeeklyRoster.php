@@ -147,20 +147,25 @@ class WeeklyRoster extends Component
         try {
             $asig = Asignacion::with('registroHora')->findOrFail($asignacionId);
 
+            // No desasignar si existen horas registradas.
+            // Deben revisarse antes de cancelar la asignación.
             if ($asig->registroHora) {
-                if ($asig->registroHora->estado === 'validado') {
-                    $this->erroresValidacion = ['No se puede desasignar a este empleado porque el turno ya cuenta con horas reales validadas.'];
-                    return;
-                }
-                $asig->registroHora->delete();
+                $this->erroresValidacion = [
+                    'No se puede desasignar al empleado porque existen horas registradas. Deben revisarse previamente.',
+                ];
+
+                return;
             }
 
-            $asig->delete();
+            // Conservar el historial sin ocupar una plaza.
+            $asig->update([
+                'estado' => Asignacion::ESTADO_CANCELADO,
+            ]);
 
             $this->turnoSeleccionado->refresh();
             $this->turnoSeleccionado->load('asignacionesActivas.empleado.categoria');
             $this->erroresValidacion = [];
-            session()->flash('success', 'Asignación eliminada correctamente.');
+            session()->flash('success', 'Asignación cancelada correctamente.');
         } catch (\Throwable $e) {
             $this->erroresValidacion = ['Error al eliminar la asignación: ' . $e->getMessage()];
         }

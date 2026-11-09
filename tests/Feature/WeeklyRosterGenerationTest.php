@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use App\Models\Asignacion;
 use App\Models\Contrato;
 use App\Models\Empleado;
+use App\Models\RegistroHora;
 
 class WeeklyRosterGenerationTest extends TestCase
 {
@@ -730,9 +731,22 @@ class WeeklyRosterGenerationTest extends TestCase
             ->call('desasignarEmpleado', $asignacion->id)
             ->assertHasNoErrors();
 
-        $this->assertDatabaseMissing('asignaciones', [
+        // La asignación debe conservarse como cancelada.
+        $this->assertDatabaseHas('asignaciones', [
             'id' => $asignacion->id,
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
         ]);
+
+        // El turno sigue publicado.
+        $this->assertDatabaseHas('turnos', [
+            'id' => $turno->id,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        // La plaza vuelve a estar disponible.
+        $this->assertSame(1, $turno->fresh()->plazasDisponibles());
     }
     public function test_planificador_puede_asignar_personal(): void
     {
@@ -809,5 +823,99 @@ class WeeklyRosterGenerationTest extends TestCase
             'empleado_id' => $empleado->id,
             'estado' => Asignacion::ESTADO_CONFIRMADO,
         ]);
+    }
+
+    public function test_no_puede_desasignar_empleado_con_horas_pendientes(): void
+    {
+        $admin = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+
+        $admin->roles()->attach($rol->id);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $empleado = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 12:00:00'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        $registro = RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => Carbon::parse('2026-06-15 08:00:00'),
+            'fin_real' => Carbon::parse('2026-06-15 12:00:00'),
+            'descanso_minutos' => 0,
+            'horas_computables' => 4,
+            'estado' => RegistroHora::ESTADO_PENDIENTE,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(WeeklyRoster::class)
+            ->call('abrirModalTurno', $turno->id)
+            ->call('desasignarEmpleado', $asignacion->id)
+            ->assertSet('erroresValidacion', [
+                'No se puede desasignar al empleado porque existen horas registradas. Deben revisarse previamente.',
+            ]);
+
+        // La asignación sigue confirmada.
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacion->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Las horas registradas permanecen intactas.
+        $this->assertDatabaseHas('registros_horas', [
+            'id' => $registro->id,
+            'asignacion_id' => $asignacion->id,
+            'estado' => RegistroHora::ESTADO_PENDIENTE,
+        ]);
+
+        // La plaza continúa ocupada.
+        $this->assertSame(0, $turno->fresh()->plazasDisponibles());
     }
 }

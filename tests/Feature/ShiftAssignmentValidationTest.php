@@ -672,4 +672,69 @@ class ShiftAssignmentValidationTest extends TestCase
         'estado' => Asignacion::ESTADO_CANCELADO,
     ]);
 }
+public function test_empleado_puede_trabajar_dos_turnos_partidos(): void
+{
+    // Primer turno: 10:00 a 18:00.
+    Asignacion::create([
+        'turno_id' => $this->turno->id,
+        'empleado_id' => $this->empleado->id,
+        'estado' => Asignacion::ESTADO_CONFIRMADO,
+    ]);
+
+    // Segundo turno: 19:00 a 22:00.
+    $segundoTurno = Turno::create([
+        'proyecto_id' => $this->turno->proyecto_id,
+        'instalacion_id' => $this->turno->instalacion_id,
+        'actividad_id' => $this->turno->actividad_id,
+        'categoria_id' => $this->catSocorrista->id,
+        'fecha' => '2026-06-15',
+        'hora_inicio' => Carbon::parse('2026-06-15 19:00:00', 'Europe/Madrid'),
+        'hora_fin' => Carbon::parse('2026-06-15 22:00:00', 'Europe/Madrid'),
+        'plazas_necesarias' => 1,
+        'estado' => Turno::ESTADO_PUBLICADO,
+    ]);
+
+    $resultado = $this->validator->validarAsignacion(
+        $segundoTurno,
+        $this->empleado
+    );
+
+    $this->assertTrue(
+        $resultado['valido'],
+        implode(' | ', $resultado['errores'])
+    );
+}
+public function test_empleado_puede_enlazar_dos_turnos_sin_solapamiento(): void
+{
+    // Primer turno: 10:00 a 18:00.
+    Asignacion::create([
+        'turno_id' => $this->turno->id,
+        'empleado_id' => $this->empleado->id,
+        'estado' => Asignacion::ESTADO_CONFIRMADO,
+    ]);
+
+    // Segundo turno: comienza exactamente a las 18:00.
+    $segundoTurno = Turno::create([
+        'proyecto_id' => $this->turno->proyecto_id,
+        'instalacion_id' => $this->turno->instalacion_id,
+        'actividad_id' => $this->turno->actividad_id,
+        'categoria_id' => $this->catSocorrista->id,
+        'fecha' => '2026-06-15',
+        'hora_inicio' => Carbon::parse('2026-06-15 18:00:00', 'Europe/Madrid'),
+        'hora_fin' => Carbon::parse('2026-06-15 20:00:00', 'Europe/Madrid'),
+        'plazas_necesarias' => 1,
+        'estado' => Turno::ESTADO_PUBLICADO,
+    ]);
+
+    $resultado = $this->validator->validarAsignacion(
+        $segundoTurno,
+        $this->empleado
+    );
+
+    $this->assertTrue(
+        $resultado['valido'],
+        implode(' | ', $resultado['errores'])
+    );
+}
+
 }

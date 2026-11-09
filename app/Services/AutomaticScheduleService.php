@@ -34,6 +34,23 @@ class AutomaticScheduleService
             ->orderBy('hora_inicio')
             ->get();
 
+        // Horas ya asignadas durante el período, en todas las instalaciones.
+        // No contar asignaciones ni turnos cancelados.
+        $horasAsignadas = Asignacion::query()
+            ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
+            ->whereHas('turno', function ($query) use ($fechaDesde, $fechaHasta) {
+                $query->where('estado', '!=', Turno::ESTADO_CANCELADO)
+                    ->whereDate('fecha', '>=', $fechaDesde)
+                    ->whereDate('fecha', '<=', $fechaHasta);
+            })
+            ->with('turno')
+            ->get()
+            ->groupBy('empleado_id')
+            ->map(fn($asignaciones) => $asignaciones->sum(
+                fn($asignacion) => $asignacion->turno->duracionHoras()
+            ))
+            ->all();
+
         foreach ($turnos as $turno) {
 
             // Nunca superar las plazas necesarias.
@@ -47,8 +64,11 @@ class AutomaticScheduleService
             $empleados = Empleado::query()
                 ->where('activo', true)
                 ->where('categoria_id', $turno->categoria_id)
-                ->orderBy('id')
-                ->get();
+                ->get()
+                ->sortBy(fn($empleado) => [
+                    $horasAsignadas[$empleado->id] ?? 0,
+                    $empleado->id,
+                ]);
 
             foreach ($empleados as $empleado) {
 
@@ -80,6 +100,10 @@ class AutomaticScheduleService
                     'estado' => Asignacion::ESTADO_ASIGNADO,
                     'tiene_conflicto' => false,
                 ]);
+
+                $horasAsignadas[$empleado->id] =
+                    ($horasAsignadas[$empleado->id] ?? 0)
+                    + $turno->duracionHoras();
 
                 $plazasLibres--;
             }

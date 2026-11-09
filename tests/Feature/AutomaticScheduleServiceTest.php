@@ -683,4 +683,319 @@ class AutomaticScheduleServiceTest extends TestCase
             'empleado_id' => $empleado->id,
         ]);
     }
+    public function test_generador_prioriza_empleado_con_menos_horas_asignadas(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $juan = Empleado::create([
+            'nombre' => 'Juan',
+            'apellidos' => 'Pérez',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        foreach ([$juan, $pedro] as $empleado) {
+            Contrato::create([
+                'empleado_id' => $empleado->id,
+                'tipo_contrato' => 'Indefinido',
+                'fecha_inicio' => '2026-01-01',
+                'fecha_fin' => '2026-12-31',
+                'jornada_semanal_horas' => 40,
+            ]);
+        }
+
+        $cliente = Cliente::create(['razon_social' => 'Cliente Test']);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create(['nombre' => 'Socorrismo']);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $crearTurno = function (string $fecha) use (
+            $proyecto,
+            $instalacion,
+            $actividad,
+            $categoria
+        ) {
+            return Turno::create([
+                'proyecto_id' => $proyecto->id,
+                'instalacion_id' => $instalacion->id,
+                'actividad_id' => $actividad->id,
+                'categoria_id' => $categoria->id,
+                'fecha' => $fecha,
+                'hora_inicio' => Carbon::parse("$fecha 08:00:00", 'Europe/Madrid'),
+                'hora_fin' => Carbon::parse("$fecha 16:00:00", 'Europe/Madrid'),
+                'plazas_necesarias' => 1,
+                'estado' => Turno::ESTADO_PUBLICADO,
+            ]);
+        };
+
+        // Juan ya tiene 24 horas asignadas.
+        foreach (['2026-06-15', '2026-06-16', '2026-06-17'] as $fecha) {
+            $turno = $crearTurno($fecha);
+
+            Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $juan->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+        }
+
+        // Pedro solamente tiene 8 horas asignadas.
+        $turnoPedro = $crearTurno('2026-06-15');
+
+        Asignacion::create([
+            'turno_id' => $turnoPedro->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Nueva plaza vacante.
+        $turnoVacante = $crearTurno('2026-06-18');
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-15',
+            '2026-06-18'
+        );
+
+        // Pedro debe tener prioridad por acumular menos horas.
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $turnoVacante->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        $this->assertDatabaseMissing('asignaciones', [
+            'turno_id' => $turnoVacante->id,
+            'empleado_id' => $juan->id,
+        ]);
+    }
+    public function test_generador_no_cuenta_horas_canceladas_para_reparto(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $juan = Empleado::create([
+            'nombre' => 'Juan',
+            'apellidos' => 'Pérez',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        foreach ([$juan, $pedro] as $empleado) {
+            Contrato::create([
+                'empleado_id' => $empleado->id,
+                'tipo_contrato' => 'Indefinido',
+                'fecha_inicio' => '2026-01-01',
+                'fecha_fin' => '2026-12-31',
+                'jornada_semanal_horas' => 40,
+            ]);
+        }
+
+        $cliente = Cliente::create(['razon_social' => 'Cliente Test']);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create(['nombre' => 'Socorrismo']);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $crearTurno = function (string $fecha) use (
+            $proyecto,
+            $instalacion,
+            $actividad,
+            $categoria
+        ) {
+            return Turno::create([
+                'proyecto_id' => $proyecto->id,
+                'instalacion_id' => $instalacion->id,
+                'actividad_id' => $actividad->id,
+                'categoria_id' => $categoria->id,
+                'fecha' => $fecha,
+                'hora_inicio' => Carbon::parse("$fecha 08:00:00", 'Europe/Madrid'),
+                'hora_fin' => Carbon::parse("$fecha 16:00:00", 'Europe/Madrid'),
+                'plazas_necesarias' => 1,
+                'estado' => Turno::ESTADO_PUBLICADO,
+            ]);
+        };
+
+        // Juan: 16 horas en asignaciones canceladas.
+        foreach (['2026-06-15', '2026-06-16'] as $fecha) {
+            $turno = $crearTurno($fecha);
+
+            Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $juan->id,
+                'estado' => Asignacion::ESTADO_CANCELADO,
+            ]);
+
+            // El turno sigue publicado, pero no debe entrar
+            // en esta ejecución del generador.
+            $turno->update([
+                'fecha' => '2026-06-10',
+                'hora_inicio' => Carbon::parse('2026-06-10 08:00:00', 'Europe/Madrid'),
+                'hora_fin' => Carbon::parse('2026-06-10 16:00:00', 'Europe/Madrid'),
+            ]);
+        }
+
+        // Pedro: 8 horas reales de planificación activa.
+        $turnoPedro = $crearTurno('2026-06-17');
+
+        Asignacion::create([
+            'turno_id' => $turnoPedro->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // Nueva plaza vacante.
+        $turnoVacante = $crearTurno('2026-06-18');
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-15',
+            '2026-06-18'
+        );
+
+        // Juan tiene cero horas activas; Pedro tiene ocho.
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $turnoVacante->id,
+            'empleado_id' => $juan->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        $this->assertDatabaseMissing('asignaciones', [
+            'turno_id' => $turnoVacante->id,
+            'empleado_id' => $pedro->id,
+        ]);
+    }
+
+    public function test_generador_cubre_vacante_de_asignacion_cancelada(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $juan = Empleado::create([
+            'nombre' => 'Juan',
+            'apellidos' => 'Pérez',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $pedro->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 10:00:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-15 18:00:00', 'Europe/Madrid'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        // Juan estaba asignado, pero se canceló su participación.
+        $asignacionCancelada = Asignacion::create([
+            'turno_id' => $turno->id,
+            'empleado_id' => $juan->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
+        // El turno continúa publicado y tiene una plaza libre.
+        $this->assertSame(1, $turno->plazasDisponibles());
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-15',
+            '2026-06-15'
+        );
+
+        // Pedro debe ocupar la plaza vacante.
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $turno->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        // La asignación cancelada de Juan debe conservarse.
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacionCancelada->id,
+            'turno_id' => $turno->id,
+            'empleado_id' => $juan->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
+        // La plaza queda cubierta, sin sobreasignaciones.
+        $this->assertSame(0, $turno->fresh()->plazasDisponibles());
+    }
 }
