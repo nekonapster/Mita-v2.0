@@ -1845,4 +1845,109 @@ class RouteAndUserManagementTest extends TestCase
             'activo' => true,
         ]);
     }
+
+    public function test_admin_no_puede_crear_contratos_solapados(): void
+    {
+        // Contrato existente: del 1 al 30 de junio.
+        \App\Models\Contrato::create([
+            'empleado_id' => $this->empleado->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'jornada_semanal_horas' => 20,
+        ]);
+
+        // Intentamos crear otro contrato que comienza
+        // antes de terminar el anterior.
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('tipo_contrato', 'Temporal')
+            ->set('fecha_inicio', '2026-06-15')
+            ->set('fecha_fin', '2026-07-15')
+            ->set('jornada_semanal_horas', 30)
+            ->call('guardarContrato')
+            ->assertHasErrors(['fecha_inicio']);
+
+        // No debe guardarse el contrato solapado.
+        $this->assertSame(
+            1,
+            \App\Models\Contrato::where(
+                'empleado_id',
+                $this->empleado->id
+            )->count()
+        );
+    }
+
+    public function test_admin_puede_crear_contratos_consecutivos(): void
+    {
+        \App\Models\Contrato::create([
+            'empleado_id' => $this->empleado->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'jornada_semanal_horas' => 20,
+        ]);
+
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->set('tipo_contrato', 'Temporal')
+            ->set('fecha_inicio', '2026-07-01')
+            ->set('fecha_fin', '2026-07-31')
+            ->set('jornada_semanal_horas', 30)
+            ->call('guardarContrato')
+            ->assertHasNoErrors();
+
+        $contratoNuevo = \App\Models\Contrato::where(
+            'empleado_id',
+            $this->empleado->id
+        )->whereDate('fecha_inicio', '2026-07-01')->firstOrFail();
+
+        $this->assertSame(
+            '2026-07-31',
+            $contratoNuevo->fecha_fin->toDateString()
+        );
+
+        $this->assertSame(
+            30.0,
+            (float) $contratoNuevo->jornada_semanal_horas
+        );
+        $this->assertSame(
+            2,
+            \App\Models\Contrato::where(
+                'empleado_id',
+                $this->empleado->id
+            )->count()
+        );
+    }
+
+public function test_admin_puede_eliminar_contrato_y_recibe_confirmacion(): void
+{
+    $contrato = \App\Models\Contrato::create([
+        'empleado_id' => $this->empleado->id,
+        'tipo_contrato' => 'Temporal',
+        'fecha_inicio' => '2026-06-01',
+        'fecha_fin' => '2026-06-30',
+        'jornada_semanal_horas' => 20,
+    ]);
+
+    Livewire::actingAs($this->admin)
+        ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+            'id' => $this->empleado->id,
+        ])
+        ->call('eliminarContrato', $contrato->id)
+        ->assertSet(
+            'feedbackMessage',
+            'Contrato eliminado correctamente del historial.'
+        )
+        ->assertSet('feedbackError', null);
+
+    $this->assertDatabaseMissing('contratos', [
+        'id' => $contrato->id,
+    ]);
+}
+
 }

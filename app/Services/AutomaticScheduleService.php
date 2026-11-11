@@ -6,6 +6,8 @@ use App\Models\Asignacion;
 use App\Models\Empleado;
 use App\Models\Proyecto;
 use App\Models\Turno;
+use App\Models\Contrato;
+use Carbon\Carbon;
 
 class AutomaticScheduleService
 {
@@ -18,6 +20,7 @@ class AutomaticScheduleService
         string $fechaDesde,
         string $fechaHasta,
         ?int $instalacionId = null
+
     ): void {
 
         // Trabajar únicamente sobre turnos publicados del proyecto.
@@ -94,6 +97,10 @@ class AutomaticScheduleService
                     continue;
                 }
 
+                // No superar las horas semanales contratadas.
+                if (!$this->respetaJornadaSemanal($empleado, $turno)) {
+                    continue;
+                }
                 Asignacion::create([
                     'turno_id' => $turno->id,
                     'empleado_id' => $empleado->id,
@@ -108,5 +115,109 @@ class AutomaticScheduleService
                 $plazasLibres--;
             }
         }
+    }
+
+    private function respetaJornadaSemanal(
+        Empleado $empleado,
+        Turno $turno
+    ): bool {
+        $inicio = Carbon::parse($turno->hora_inicio);
+        $fin = Carbon::parse($turno->hora_fin);
+
+        // Obtener el contrato que cubre completamente el turno.
+        $contrato = $empleado->contratos()
+            ->whereDate('fecha_inicio', '<=', $inicio->toDateString())
+            ->where(function ($query) use ($fin) {
+                $query->whereNull('fecha_fin')
+                    ->orWhereDate('fecha_fin', '>=', $fin->toDateString());
+            })
+            ->first();
+
+        if (!$contrato) {
+            return false;
+        }
+
+        $limite = (float) $contrato->jornada_semanal_horas;
+
+
+        // Los límites semanales se calculan en hora española.
+        $zona = 'Europe/Madrid';
+
+        $inicioLocal = $inicio->copy()->setTimezone($zona);
+        $finLocal = $fin->copy()->setTimezone($zona);
+
+        // Revisar cada semana que atraviesa el nuevo turno.
+        $lunes = $inicioLocal->copy()->startOfWeek();
+
+        while ($lunes->lessThan($finLocal)) {
+            $siguienteLunes = $lunes->copy()->addWeek();
+
+            // Consultar la base de datos utilizando límites UTC.
+            $desdeUTC = $lunes->copy()->utc();
+            $hastaUTC = $siguienteLunes->copy()->utc();
+
+            $asignaciones = Asignacion::query()
+                ->where('empleado_id', $empleado->id)
+                ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
+                ->whereHas('turno', function ($query) use (
+                    $desdeUTC,
+                    $hastaUTC
+                ) {
+                    $query
+                        ->where('estado', '!=', Turno::ESTADO_CANCELADO)
+                        ->where('hora_inicio', '<', $hastaUTC)
+                        ->where('hora_fin', '>', $desdeUTC);
+                })
+                ->with('turno')
+                ->get();
+
+            $horasAsignadas = $asignaciones->sum(
+                function ($asignacion) use ($lunes, $siguienteLunes) {
+                    $inicioTurno = Carbon::parse(
+                        $asignacion->turno->hora_inicio
+                    )->setTimezone('Europe/Madrid');
+
+                    $finTurno = Carbon::parse(
+                        $asignacion->turno->hora_fin
+                    )->setTimezone('Europe/Madrid');
+
+                    $desde = max(
+                        $inicioTurno->getTimestamp(),
+                        $lunes->getTimestamp()
+                    );
+
+                    $hasta = min(
+                        $finTurno->getTimestamp(),
+                        $siguienteLunes->getTimestamp()
+                    );
+
+                    return max(0, $hasta - $desde) / 3600;
+                }
+            );
+
+            // Horas del nuevo turno correspondientes a esta semana.
+            $desdeNuevo = max(
+                $inicioLocal->getTimestamp(),
+                $lunes->getTimestamp()
+            );
+
+            $hastaNuevo = min(
+                $finLocal->getTimestamp(),
+                $siguienteLunes->getTimestamp()
+            );
+
+            $horasNuevas = max(
+                0,
+                $hastaNuevo - $desdeNuevo
+            ) / 3600;
+
+            if ($horasAsignadas + $horasNuevas > $limite) {
+                return false;
+            }
+
+            $lunes = $siguienteLunes;
+        }
+
+        return true;
     }
 }

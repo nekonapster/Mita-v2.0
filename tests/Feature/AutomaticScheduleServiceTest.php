@@ -998,4 +998,480 @@ class AutomaticScheduleServiceTest extends TestCase
         // La plaza queda cubierta, sin sobreasignaciones.
         $this->assertSame(0, $turno->fresh()->plazasDisponibles());
     }
+
+    public function test_generador_no_supera_jornada_semanal_contratada(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $pedro->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 20,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $datosTurno = [
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ];
+
+        // Lunes: 10 horas ya asignadas.
+        $turnoLunes = Turno::create($datosTurno + [
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-15 18:00', 'Europe/Madrid'),
+        ]);
+
+        // Martes: 8 horas ya asignadas.
+        $turnoMartes = Turno::create($datosTurno + [
+            'fecha' => '2026-06-16',
+            'hora_inicio' => Carbon::parse('2026-06-16 08:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-16 16:00', 'Europe/Madrid'),
+        ]);
+
+        foreach ([$turnoLunes, $turnoMartes] as $turno) {
+            Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $pedro->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+        }
+
+        // Miércoles: nuevo turno de 8 horas.
+        $turnoVacante = Turno::create($datosTurno + [
+            'fecha' => '2026-06-17',
+            'hora_inicio' => Carbon::parse('2026-06-17 08:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-17 16:00', 'Europe/Madrid'),
+        ]);
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-17',
+            '2026-06-17'
+        );
+
+        // Pedro tiene 18 horas: añadir 8 superaría las 20 contratadas.
+        $this->assertDatabaseMissing('asignaciones', [
+            'turno_id' => $turnoVacante->id,
+            'empleado_id' => $pedro->id,
+        ]);
+
+        // Sus asignaciones anteriores permanecen intactas.
+        $this->assertSame(
+            2,
+            Asignacion::where('empleado_id', $pedro->id)->count()
+        );
+
+        // La vacante queda pendiente de cubrir.
+        $this->assertSame(1, $turnoVacante->plazasDisponibles());
+    }
+
+    public function test_generador_reparte_horas_de_turno_nocturno_entre_semanas(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $pedro->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 20,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $datosTurno = [
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ];
+
+        // Domingo 22:00 a lunes 06:00 (hora española).
+        // Solo 6 de sus 8 horas corresponden a la nueva semana.
+        $nocturno = Turno::create($datosTurno + [
+            'fecha' => '2026-06-14',
+            'hora_inicio' => Carbon::parse(
+                '2026-06-14 22:00',
+                'Europe/Madrid'
+            )->utc(),
+            'hora_fin' => Carbon::parse(
+                '2026-06-15 06:00',
+                'Europe/Madrid'
+            )->utc(),
+        ]);
+
+        // Martes: 8 horas.
+        $martes = Turno::create($datosTurno + [
+            'fecha' => '2026-06-16',
+            'hora_inicio' => Carbon::parse(
+                '2026-06-16 08:00',
+                'Europe/Madrid'
+            )->utc(),
+            'hora_fin' => Carbon::parse(
+                '2026-06-16 16:00',
+                'Europe/Madrid'
+            )->utc(),
+        ]);
+
+        foreach ([$nocturno, $martes] as $turno) {
+            Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $pedro->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+        }
+
+        // Miércoles: nuevo turno de 6 horas.
+        $miercoles = Turno::create($datosTurno + [
+            'fecha' => '2026-06-17',
+            'hora_inicio' => Carbon::parse(
+                '2026-06-17 08:00',
+                'Europe/Madrid'
+            )->utc(),
+            'hora_fin' => Carbon::parse(
+                '2026-06-17 14:00',
+                'Europe/Madrid'
+            )->utc(),
+        ]);
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-17',
+            '2026-06-17'
+        );
+
+        // 6 horas del nocturno + 8 del martes + 6 del miércoles = 20.
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $miercoles->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        $this->assertSame(0, $miercoles->fresh()->plazasDisponibles());
+    }
+
+
+    public function test_generador_valida_ambas_semanas_en_turno_nocturno(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $pedro->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 20,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create(['nombre' => 'Socorrismo']);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $datosTurno = [
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ];
+
+        $crearTurno = function ($fecha, $inicio, $fin) use ($datosTurno) {
+            return Turno::create($datosTurno + [
+                'fecha' => $fecha,
+                'hora_inicio' => Carbon::parse($inicio, 'Europe/Madrid')->utc(),
+                'hora_fin' => Carbon::parse($fin, 'Europe/Madrid')->utc(),
+            ]);
+        };
+
+        // Semana anterior: 18 horas.
+        $viernes = $crearTurno(
+            '2026-06-12',
+            '2026-06-12 08:00',
+            '2026-06-12 18:00'
+        );
+
+        $sabado = $crearTurno(
+            '2026-06-13',
+            '2026-06-13 08:00',
+            '2026-06-13 16:00'
+        );
+
+        // Semana siguiente: 10 horas.
+        $lunes = $crearTurno(
+            '2026-06-15',
+            '2026-06-15 08:00',
+            '2026-06-15 18:00'
+        );
+
+        foreach ([$viernes, $sabado, $lunes] as $turno) {
+            Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $pedro->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+        }
+
+        // Nueva vacante: domingo 22:00 hasta lunes 06:00.
+        $nocturno = $crearTurno(
+            '2026-06-14',
+            '2026-06-14 22:00',
+            '2026-06-15 06:00'
+        );
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-14',
+            '2026-06-14'
+        );
+
+        // Semana anterior: 18 + 2 = 20 horas.
+        // Semana siguiente: 10 + 6 = 16 horas.
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $nocturno->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        $this->assertSame(0, $nocturno->fresh()->plazasDisponibles());
+
+        // Simulamos una hora adicional ya trabajada el sábado.
+        // La semana anterior pasa de 18 a 19 horas.
+        $sabado->update([
+            'hora_fin' => Carbon::parse(
+                '2026-06-13 17:00',
+                'Europe/Madrid'
+            )->utc(),
+        ]);
+
+        // Eliminamos únicamente la asignación automática creada
+        // para poder comprobar nuevamente el mismo turno.
+        Asignacion::where('turno_id', $nocturno->id)
+            ->where('empleado_id', $pedro->id)
+            ->delete();
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-14',
+            '2026-06-14'
+        );
+
+        // Semana anterior: 19 + 2 = 21 horas.
+        // El generador debe rechazar la asignación.
+        $this->assertDatabaseMissing('asignaciones', [
+            'turno_id' => $nocturno->id,
+            'empleado_id' => $pedro->id,
+        ]);
+
+        $this->assertSame(1, $nocturno->fresh()->plazasDisponibles());
+    }
+
+
+public function test_generador_respeta_cambio_de_jornada_entre_contratos(): void
+{
+    $categoria = Categoria::create([
+        'nombre' => 'Socorrista',
+        'codigo' => 'SOC',
+    ]);
+
+    $pedro = Empleado::create([
+        'nombre' => 'Pedro',
+        'apellidos' => 'García',
+        'categoria_id' => $categoria->id,
+        'activo' => true,
+    ]);
+
+    // Junio: 20 horas semanales.
+    Contrato::create([
+        'empleado_id' => $pedro->id,
+        'tipo_contrato' => 'Temporal',
+        'fecha_inicio' => '2026-06-01',
+        'fecha_fin' => '2026-06-30',
+        'jornada_semanal_horas' => 20,
+    ]);
+
+    // Julio: 30 horas semanales.
+    Contrato::create([
+        'empleado_id' => $pedro->id,
+        'tipo_contrato' => 'Temporal',
+        'fecha_inicio' => '2026-07-01',
+        'fecha_fin' => '2026-07-31',
+        'jornada_semanal_horas' => 30,
+    ]);
+
+    $cliente = Cliente::create([
+        'razon_social' => 'Cliente Test',
+    ]);
+
+    $instalacion = Instalacion::create([
+        'cliente_id' => $cliente->id,
+        'nombre' => 'Piscina Municipal',
+    ]);
+
+    $actividad = Actividad::create([
+        'nombre' => 'Socorrismo',
+    ]);
+
+    $proyecto = Proyecto::create([
+        'cliente_id' => $cliente->id,
+        'nombre' => 'Proyecto Test',
+        'fecha_inicio' => '2026-01-01',
+    ]);
+
+    $datosTurno = [
+        'proyecto_id' => $proyecto->id,
+        'instalacion_id' => $instalacion->id,
+        'actividad_id' => $actividad->id,
+        'categoria_id' => $categoria->id,
+        'plazas_necesarias' => 1,
+        'estado' => Turno::ESTADO_PUBLICADO,
+    ];
+
+    // Usamos semanas distintas para evitar el cambio a mitad de semana.
+    foreach ([
+        ['2026-06-15', '2026-06-16', '2026-06-17', false],
+        ['2026-07-06', '2026-07-07', '2026-07-08', true],
+    ] as [$lunes, $martes, $miercoles, $debeAsignar]) {
+        foreach ([
+            [$lunes, '08:00', '18:00'],
+            [$martes, '08:00', '16:00'],
+        ] as [$fecha, $inicio, $fin]) {
+            $turno = Turno::create($datosTurno + [
+                'fecha' => $fecha,
+                'hora_inicio' => Carbon::parse(
+                    "$fecha $inicio",
+                    'Europe/Madrid'
+                ),
+                'hora_fin' => Carbon::parse(
+                    "$fecha $fin",
+                    'Europe/Madrid'
+                ),
+            ]);
+
+            Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $pedro->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+        }
+
+        // Miércoles: vacante de 8 horas.
+        $vacante = Turno::create($datosTurno + [
+            'fecha' => $miercoles,
+            'hora_inicio' => Carbon::parse(
+                "$miercoles 08:00",
+                'Europe/Madrid'
+            ),
+            'hora_fin' => Carbon::parse(
+                "$miercoles 16:00",
+                'Europe/Madrid'
+            ),
+        ]);
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            $miercoles,
+            $miercoles
+        );
+
+        $existeAsignacion = Asignacion::where(
+            'turno_id',
+            $vacante->id
+        )->where('empleado_id', $pedro->id)->exists();
+
+        $this->assertSame(
+            $debeAsignar,
+            $existeAsignacion,
+            "Resultado inesperado para el turno del $miercoles"
+        );
+    }
+}
+
 }

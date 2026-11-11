@@ -87,6 +87,24 @@ class EmployeeShow extends Component
             'fecha_fin.after_or_equal' => 'La fecha de fin no puede ser anterior a la fecha de inicio del contrato.',
         ]);
 
+        $existeSolapamiento = Contrato::query()
+            ->where('empleado_id', $this->empleado->id)
+            ->where('fecha_inicio', '<=', $this->fecha_fin ?: '9999-12-31')
+            ->where(function ($query) {
+                $query->whereNull('fecha_fin')
+                    ->orWhere('fecha_fin', '>=', $this->fecha_inicio);
+            })
+            ->exists();
+
+        if ($existeSolapamiento) {
+            $this->addError(
+                'fecha_inicio',
+                'El período indicado se solapa con otro contrato del empleado.'
+            );
+
+            return;
+        }
+
         Contrato::create([
             'empleado_id' => $this->empleado->id,
             'tipo_contrato' => $this->tipo_contrato,
@@ -111,8 +129,6 @@ class EmployeeShow extends Component
             $contrato = Contrato::where('empleado_id', $this->empleado->id)
                 ->findOrFail($id);
 
-            $contrato->delete();
-            $contrato = Contrato::where('empleado_id', $this->empleado->id)->findOrFail($id);
             $contrato->delete();
             $this->empleado->load('contratos');
             $this->feedbackMessage = 'Contrato eliminado correctamente del historial.';
