@@ -46,6 +46,16 @@ class Empleado extends Model
         return $this->belongsTo(Categoria::class, 'categoria_id');
     }
 
+    public function categoriasHabilitadas(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(
+            Categoria::class,
+            'categoria_empleado',
+            'empleado_id',
+            'categoria_id'
+        )->withTimestamps();
+    }
+
     public function user(): HasOne
     {
         return $this->hasOne(User::class, 'employee_id');

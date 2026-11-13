@@ -26,6 +26,8 @@ class EmployeeIndex extends Component
     public string $email = '';
     public string $telefono = '';
     public ?int $categoria_id = null;
+    // Categorías que el empleado está habilitado para desempeñar.
+    public array $categoriasHabilitadas = [];
     public bool $activo = true;
     public string $observaciones = '';
 
@@ -43,6 +45,8 @@ class EmployeeIndex extends Component
             'email' => 'nullable|email|max:150',
             'telefono' => 'nullable|string|max:30',
             'categoria_id' => 'required|exists:categorias,id',
+            'categoriasHabilitadas' => 'array',
+            'categoriasHabilitadas.*' => 'integer|distinct|exists:categorias,id',
             'activo' => 'boolean',
             'observaciones' => 'nullable|string|max:1000',
         ];
@@ -57,6 +61,7 @@ class EmployeeIndex extends Component
     {
         $this->reset(['empleadoId', 'nombre', 'apellidos', 'dni_nie', 'email', 'telefono', 'categoria_id', 'observaciones']);
         $this->activo = true;
+        $this->categoriasHabilitadas = [];
         $this->categoria_id = Categoria::first()?->id;
         $this->modalOpen = true;
     }
@@ -71,6 +76,10 @@ class EmployeeIndex extends Component
         $this->email = $empleado->email ?? '';
         $this->telefono = $empleado->telefono ?? '';
         $this->categoria_id = $empleado->categoria_id;
+        $this->categoriasHabilitadas = $empleado
+            ->categoriasHabilitadas()
+            ->pluck('categorias.id')
+            ->all();
         $this->activo = (bool) $empleado->activo;
         $this->observaciones = $empleado->observaciones ?? '';
         $this->modalOpen = true;
@@ -87,7 +96,7 @@ class EmployeeIndex extends Component
 
         $this->validate();
 
-        Empleado::updateOrCreate(
+        $empleado = Empleado::updateOrCreate(
             ['id' => $this->empleadoId],
             [
                 'nombre' => $this->nombre,
@@ -99,6 +108,11 @@ class EmployeeIndex extends Component
                 'activo' => $this->activo,
                 'observaciones' => $this->observaciones ?: null,
             ]
+        );
+
+        // Sincronizar las categorías habilitadas del empleado.
+        $empleado->categoriasHabilitadas()->sync(
+            $this->categoriasHabilitadas
         );
 
         $this->modalOpen = false;
@@ -172,7 +186,7 @@ class EmployeeIndex extends Component
 
     public function render()
     {
-        $query = Empleado::with(['categoria', 'contratos'])
+        $query = Empleado::with(['categoria', 'contratos', 'categoriasHabilitadas'])
             ->when($this->search, function ($q) {
                 $q->where(function ($sub) {
                     $sub->where('nombre', 'ilike', "%{$this->search}%")

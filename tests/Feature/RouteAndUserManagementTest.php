@@ -800,6 +800,12 @@ class RouteAndUserManagementTest extends TestCase
         // Utilizamos la categoría existente en los datos de prueba.
         $categoriaId = $this->empleado->categoria_id;
 
+        // Crear una segunda categoría para comprobar las habilitaciones múltiples.
+        $segundaCategoria = \App\Models\Categoria::create([
+            'nombre' => 'Socorrista prueba',
+            'codigo' => 'SOCTEST',
+        ]);
+
         // El administrador crea un empleado nuevo.
         Livewire::actingAs($this->admin)
             ->test(\App\Livewire\Rrhh\EmployeeIndex::class)
@@ -808,6 +814,10 @@ class RouteAndUserManagementTest extends TestCase
             ->set('apellidos', 'García')
             ->set('dni_nie', 'X6791299E')
             ->set('categoria_id', $categoriaId)
+            ->set('categoriasHabilitadas', [
+                $categoriaId,
+                $segundaCategoria->id,
+            ])
             ->call('guardar')
             ->assertHasNoErrors();
 
@@ -819,6 +829,21 @@ class RouteAndUserManagementTest extends TestCase
             'categoria_id' => $categoriaId,
             'activo' => true,
         ]);
+
+        // Recuperar el empleado recién creado.
+        $empleadoCreado = \App\Models\Empleado::where('dni_nie', 'X6791299E')
+            ->firstOrFail();
+
+        // Comprobar que conserva su categoría contractual.
+        $this->assertEquals($categoriaId, $empleadoCreado->categoria_id);
+
+        // Comprobar que tiene ambas categorías habilitadas.
+        $this->assertEqualsCanonicalizing(
+            [$categoriaId, $segundaCategoria->id],
+            $empleadoCreado->categoriasHabilitadas()
+                ->pluck('categorias.id')
+                ->all()
+        );
     }
 
     public function test_cannot_create_employee_with_duplicate_dni(): void
@@ -1924,30 +1949,29 @@ class RouteAndUserManagementTest extends TestCase
         );
     }
 
-public function test_admin_puede_eliminar_contrato_y_recibe_confirmacion(): void
-{
-    $contrato = \App\Models\Contrato::create([
-        'empleado_id' => $this->empleado->id,
-        'tipo_contrato' => 'Temporal',
-        'fecha_inicio' => '2026-06-01',
-        'fecha_fin' => '2026-06-30',
-        'jornada_semanal_horas' => 20,
-    ]);
+    public function test_admin_puede_eliminar_contrato_y_recibe_confirmacion(): void
+    {
+        $contrato = \App\Models\Contrato::create([
+            'empleado_id' => $this->empleado->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'jornada_semanal_horas' => 20,
+        ]);
 
-    Livewire::actingAs($this->admin)
-        ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
-            'id' => $this->empleado->id,
-        ])
-        ->call('eliminarContrato', $contrato->id)
-        ->assertSet(
-            'feedbackMessage',
-            'Contrato eliminado correctamente del historial.'
-        )
-        ->assertSet('feedbackError', null);
+        Livewire::actingAs($this->admin)
+            ->test(\App\Livewire\Rrhh\EmployeeShow::class, [
+                'id' => $this->empleado->id,
+            ])
+            ->call('eliminarContrato', $contrato->id)
+            ->assertSet(
+                'feedbackMessage',
+                'Contrato eliminado correctamente del historial.'
+            )
+            ->assertSet('feedbackError', null);
 
-    $this->assertDatabaseMissing('contratos', [
-        'id' => $contrato->id,
-    ]);
-}
-
+        $this->assertDatabaseMissing('contratos', [
+            'id' => $contrato->id,
+        ]);
+    }
 }
