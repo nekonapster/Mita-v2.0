@@ -35,6 +35,10 @@ class WeeklyRoster extends Component
     public ?Turno $turnoSeleccionado = null;
     public ?int $nuevoEmpleadoId = null;
     public array $erroresValidacion = [];
+    public bool $confirmacionExcesoPendiente = false;
+    public ?string $advertenciaExceso = null;
+    public ?int $empleadoExcesoPendienteId = null;
+    public ?int $turnoExcesoPendienteId = null;
 
     public function mount(): void
     {
@@ -86,10 +90,16 @@ class WeeklyRoster extends Component
         $this->nuevoEmpleadoId = null;
         $this->erroresValidacion = [];
         $this->modalTurnoOpen = true;
+        $this->confirmacionExcesoPendiente = false;
+        $this->advertenciaExceso = null;
+        $this->empleadoExcesoPendienteId = null;
+        $this->turnoExcesoPendienteId = null;
     }
 
     public function asignarEmpleado(): void
     {
+
+
         $usuario = auth()->user();
 
         abort_unless(
@@ -117,6 +127,74 @@ class WeeklyRoster extends Component
             return;
         }
 
+        $inicio = \Carbon\Carbon::parse($this->turnoSeleccionado->hora_inicio);
+        $fin = \Carbon\Carbon::parse($this->turnoSeleccionado->hora_fin);
+
+        $zona = 'Europe/Madrid';
+        $inicioLocal = $inicio->copy()->setTimezone($zona);
+        $finLocal = $fin->copy()->setTimezone($zona);
+
+        $lunes = $inicioLocal->copy()->startOfWeek();
+        $siguienteLunes = $lunes->copy()->addWeek();
+
+        $contrato = $empleado->contratos()
+            ->whereDate('fecha_inicio', '<=', $inicioLocal->toDateString())
+            ->where(function ($query) use ($finLocal) {
+                $query->whereNull('fecha_fin')
+                    ->orWhereDate('fecha_fin', '>=', $finLocal->toDateString());
+            })
+            ->first();
+
+        if ($contrato) {
+            $asignaciones = Asignacion::query()
+                ->where('empleado_id', $empleado->id)
+                ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
+                ->whereHas('turno', function ($query) use ($lunes, $siguienteLunes) {
+                    $query->where('estado', '!=', Turno::ESTADO_CANCELADO)
+                        ->where('hora_inicio', '<', $siguienteLunes->copy()->utc())
+                        ->where('hora_fin', '>', $lunes->copy()->utc());
+                })
+                ->with('turno')
+                ->get();
+
+            $horasAsignadas = $asignaciones->sum(function ($asignacion) use ($lunes, $siguienteLunes) {
+                $desde = max(
+                    $asignacion->turno->hora_inicio->getTimestamp(),
+                    $lunes->getTimestamp()
+                );
+
+                $hasta = min(
+                    $asignacion->turno->hora_fin->getTimestamp(),
+                    $siguienteLunes->getTimestamp()
+                );
+
+                return max(0, $hasta - $desde) / 3600;
+            });
+
+            $horasNuevas = max(
+                0,
+                min($fin->getTimestamp(), $siguienteLunes->getTimestamp())
+                    - max($inicio->getTimestamp(), $lunes->getTimestamp())
+            ) / 3600;
+
+            $limite = (float) $contrato->jornada_semanal_horas;
+            $total = $horasAsignadas + $horasNuevas;
+
+            if ($total > $limite) {
+                $exceso = $total - $limite;
+
+                $this->confirmacionExcesoPendiente = true;
+                $this->empleadoExcesoPendienteId = $empleado->id;
+                $this->turnoExcesoPendienteId = $this->turnoSeleccionado->id;
+                $this->advertenciaExceso =
+                    "Jornada contratada: {$limite} h. " .
+                    "Horas previstas: {$total} h. " .
+                    "Exceso: {$exceso} h.";
+
+                return;
+            }
+        }
+
         Asignacion::create([
             'turno_id' => $this->turnoSeleccionado->id,
             'empleado_id' => $empleado->id,
@@ -129,6 +207,174 @@ class WeeklyRoster extends Component
         $this->nuevoEmpleadoId = null;
         session()->flash('success', "Empleado {$empleado->nombre_completo} asignado correctamente.");
     }
+
+
+    public function confirmarAsignacionConExceso(): void
+    {
+        $usuario = auth()->user();
+
+        abort_unless(
+            $usuario &&
+                (
+                    $usuario->isAdmin() ||
+                    $usuario->hasRole('planner')
+                ),
+            403,
+            'No tienes permisos para asignar empleados.'
+        );
+
+        if (
+            ! $this->confirmacionExcesoPendiente ||
+            ! $this->turnoSeleccionado ||
+            ! $this->nuevoEmpleadoId ||
+            $this->empleadoExcesoPendienteId !== (int) $this->nuevoEmpleadoId ||
+            $this->turnoExcesoPendienteId !== (int) $this->turnoSeleccionado->id
+        ) {
+            $this->confirmacionExcesoPendiente = false;
+            $this->advertenciaExceso = null;
+            $this->empleadoExcesoPendienteId = null;
+            $this->turnoExcesoPendienteId = null;
+
+            return;
+        }
+
+        // Solo se puede confirmar una advertencia generada previamente.
+        if (
+            ! $this->confirmacionExcesoPendiente ||
+            ! $this->turnoSeleccionado ||
+            ! $this->nuevoEmpleadoId
+        ) {
+            return;
+        }
+
+        $empleado = Empleado::with([
+            'categoria',
+            'contratos',
+            'ausencias',
+        ])->findOrFail($this->nuevoEmpleadoId);
+
+        // Volver a cargar el turno y repetir las validaciones.
+        $turno = Turno::findOrFail($this->turnoSeleccionado->id);
+
+        $validator = new ShiftAssignmentValidator();
+        $resultado = $validator->validarAsignacion($turno, $empleado);
+
+        if (! $resultado['valido']) {
+            $this->erroresValidacion = $resultado['errores'];
+            $this->confirmacionExcesoPendiente = false;
+            $this->advertenciaExceso = null;
+            return;
+        }
+
+        // Recalcular la jornada antes de aceptar la confirmación.
+        $inicio = Carbon::parse($turno->hora_inicio);
+        $fin = Carbon::parse($turno->hora_fin);
+
+        $inicioLocal = $inicio->copy()->setTimezone('Europe/Madrid');
+        $finLocal = $fin->copy()->setTimezone('Europe/Madrid');
+
+        $lunes = $inicioLocal->copy()->startOfWeek();
+        $siguienteLunes = $lunes->copy()->addWeek();
+
+        $contrato = $empleado->contratos()
+            ->whereDate('fecha_inicio', '<=', $inicioLocal->toDateString())
+            ->where(function ($query) use ($finLocal) {
+                $query->whereNull('fecha_fin')
+                    ->orWhereDate('fecha_fin', '>=', $finLocal->toDateString());
+            })
+            ->first();
+
+        // Si cambió la situación contractual, invalidar la confirmación.
+        if (! $contrato) {
+            $this->confirmacionExcesoPendiente = false;
+            $this->advertenciaExceso = null;
+            $this->erroresValidacion = [
+                'La situación contractual ha cambiado. Revisa la asignación.',
+            ];
+            return;
+        }
+
+        $asignaciones = Asignacion::query()
+            ->where('empleado_id', $empleado->id)
+            ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
+            ->whereHas('turno', function ($query) use ($lunes, $siguienteLunes) {
+                $query->where('estado', '!=', Turno::ESTADO_CANCELADO)
+                    ->where('hora_inicio', '<', $siguienteLunes->copy()->utc())
+                    ->where('hora_fin', '>', $lunes->copy()->utc());
+            })
+            ->with('turno')
+            ->get();
+
+        $horasAsignadas = $asignaciones->sum(
+            function ($asignacion) use ($lunes, $siguienteLunes) {
+                $desde = max(
+                    $asignacion->turno->hora_inicio->getTimestamp(),
+                    $lunes->getTimestamp()
+                );
+
+                $hasta = min(
+                    $asignacion->turno->hora_fin->getTimestamp(),
+                    $siguienteLunes->getTimestamp()
+                );
+
+                return max(0, $hasta - $desde) / 3600;
+            }
+        );
+
+        $horasNuevas = max(
+            0,
+            min($fin->getTimestamp(), $siguienteLunes->getTimestamp())
+                - max($inicio->getTimestamp(), $lunes->getTimestamp())
+        ) / 3600;
+
+        $limite = (float) $contrato->jornada_semanal_horas;
+        $total = $horasAsignadas + $horasNuevas;
+        $exceso = $total - $limite;
+
+        // Si el exceso cambió, solicitar una nueva confirmación.
+        $nuevaAdvertencia =
+            "Jornada contratada: {$limite} h. " .
+            "Horas previstas: {$total} h. " .
+            "Exceso: {$exceso} h.";
+
+        if ($total <= $limite || $nuevaAdvertencia !== $this->advertenciaExceso) {
+            $this->confirmacionExcesoPendiente = $total > $limite;
+            $this->advertenciaExceso = $total > $limite
+                ? $nuevaAdvertencia
+                : null;
+
+            $this->erroresValidacion = [
+                'La jornada ha cambiado. Revisa las horas antes de confirmar.',
+            ];
+
+            return;
+        }
+        Asignacion::create([
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+            'tiene_conflicto' => false,
+        ]);
+
+        $this->turnoSeleccionado = $turno->fresh();
+        $this->turnoSeleccionado->load(
+            'asignacionesActivas.empleado.categoria'
+        );
+
+        $this->nuevoEmpleadoId = null;
+        $this->confirmacionExcesoPendiente = false;
+        $this->advertenciaExceso = null;
+        $this->erroresValidacion = [];
+
+        session()->flash(
+            'success',
+            "Empleado {$empleado->nombre_completo} asignado con exceso de jornada confirmado."
+        );
+
+        $this->empleadoExcesoPendienteId = null;
+        $this->turnoExcesoPendienteId = null;
+    }
+
 
     public function desasignarEmpleado(int $asignacionId): void
     {

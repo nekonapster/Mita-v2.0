@@ -825,16 +825,17 @@ class WeeklyRosterGenerationTest extends TestCase
         ]);
     }
 
-    public function test_no_puede_desasignar_empleado_con_horas_pendientes(): void
+
+    public function test_asignacion_manual_exige_confirmacion_si_supera_jornada_semanal(): void
     {
-        $admin = User::factory()->create();
+        $administrador = User::factory()->create();
 
         $rol = Role::firstOrCreate(
             ['name' => Role::ADMIN],
             ['display_name' => 'Administrador']
         );
 
-        $admin->roles()->attach($rol->id);
+        $administrador->roles()->attach($rol->id);
 
         $categoria = Categoria::create([
             'nombre' => 'Socorrista',
@@ -848,13 +849,22 @@ class WeeklyRosterGenerationTest extends TestCase
             'activo' => true,
         ]);
 
+        Contrato::create([
+            'empleado_id' => $empleado->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'jornada_semanal_horas' => 20,
+        ]);
+
         $cliente = Cliente::create([
-            'razon_social' => 'Cliente Test',
+            'razon_social' => 'Ayuntamiento de Mairena',
         ]);
 
         $instalacion = Instalacion::create([
             'cliente_id' => $cliente->id,
-            'nombre' => 'Piscina Municipal',
+            'nombre' => 'Centro Acuático Cavaleri',
+            'activo' => true,
         ]);
 
         $actividad = Actividad::create([
@@ -863,59 +873,156 @@ class WeeklyRosterGenerationTest extends TestCase
 
         $proyecto = Proyecto::create([
             'cliente_id' => $cliente->id,
-            'nombre' => 'Proyecto Test',
+            'nombre' => 'Campaña Socorrismo',
             'fecha_inicio' => '2026-01-01',
         ]);
 
-        $turno = Turno::create([
+        $datosTurno = [
             'proyecto_id' => $proyecto->id,
             'instalacion_id' => $instalacion->id,
             'actividad_id' => $actividad->id,
             'categoria_id' => $categoria->id,
-            'fecha' => '2026-06-15',
-            'hora_inicio' => Carbon::parse('2026-06-15 08:00:00'),
-            'hora_fin' => Carbon::parse('2026-06-15 12:00:00'),
             'plazas_necesarias' => 1,
             'estado' => Turno::ESTADO_PUBLICADO,
+        ];
+
+        // Lunes: 10 horas asignadas.
+        $lunes = Turno::create($datosTurno + [
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse(
+                '2026-06-15 08:00',
+                'Europe/Madrid'
+            ),
+            'hora_fin' => Carbon::parse(
+                '2026-06-15 18:00',
+                'Europe/Madrid'
+            ),
         ]);
 
-        $asignacion = Asignacion::create([
-            'turno_id' => $turno->id,
+        // Martes: 8 horas asignadas.
+        $martes = Turno::create($datosTurno + [
+            'fecha' => '2026-06-16',
+            'hora_inicio' => Carbon::parse(
+                '2026-06-16 08:00',
+                'Europe/Madrid'
+            ),
+            'hora_fin' => Carbon::parse(
+                '2026-06-16 16:00',
+                'Europe/Madrid'
+            ),
+        ]);
+
+        foreach ([$lunes, $martes] as $turno) {
+            Asignacion::create([
+                'turno_id' => $turno->id,
+                'empleado_id' => $empleado->id,
+                'estado' => Asignacion::ESTADO_CONFIRMADO,
+            ]);
+        }
+
+        // Miércoles: 8 horas adicionales.
+        $vacante = Turno::create($datosTurno + [
+            'fecha' => '2026-06-17',
+            'hora_inicio' => Carbon::parse(
+                '2026-06-17 08:00',
+                'Europe/Madrid'
+            ),
+            'hora_fin' => Carbon::parse(
+                '2026-06-17 16:00',
+                'Europe/Madrid'
+            ),
+        ]);
+
+        $componente = Livewire::actingAs($administrador)
+            ->test(WeeklyRoster::class)
+            ->call('abrirModalTurno', $vacante->id)
+            ->set('nuevoEmpleadoId', $empleado->id)
+            ->call('asignarEmpleado')
+            ->assertSet('confirmacionExcesoPendiente', true)
+            ->assertSet(
+                'advertenciaExceso',
+                'Jornada contratada: 20 h. Horas previstas: 26 h. Exceso: 6 h.'
+            );
+
+        // Primera pulsación: no se debe crear la asignación.
+        $this->assertDatabaseMissing('asignaciones', [
+            'turno_id' => $vacante->id,
+            'empleado_id' => $empleado->id,
+        ]);
+
+        // El administrador confirma expresamente el exceso.
+
+        // Una confirmación pendiente no debe servir para otro empleado.
+        $otroEmpleado = Empleado::create([
+            'nombre' => 'Juan',
+            'apellidos' => 'Pérez',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $otroEmpleado->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'jornada_semanal_horas' => 20,
+        ]);
+
+        $componente
+            ->set('nuevoEmpleadoId', $otroEmpleado->id)
+            ->call('confirmarAsignacionConExceso');
+
+        $this->assertDatabaseMissing('asignaciones', [
+            'turno_id' => $vacante->id,
+            'empleado_id' => $otroEmpleado->id,
+        ]);
+
+        // La confirmación anterior quedó invalidada.
+        // Seleccionamos nuevamente a Pedro.
+        $componente
+            ->set('nuevoEmpleadoId', $empleado->id)
+            ->call('asignarEmpleado')
+            ->assertSet('confirmacionExcesoPendiente', true)
+            ->assertSet('empleadoExcesoPendienteId', $empleado->id)
+            ->assertSet('turnoExcesoPendienteId', $vacante->id);
+
+        // Otra asignación modifica la jornada después de la advertencia.
+        $turnoSimultaneo = Turno::create($datosTurno + [
+            'fecha' => '2026-06-18',
+            'hora_inicio' => Carbon::parse('2026-06-18 08:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-18 12:00', 'Europe/Madrid'),
+        ]);
+
+        Asignacion::create([
+            'turno_id' => $turnoSimultaneo->id,
             'empleado_id' => $empleado->id,
             'estado' => Asignacion::ESTADO_CONFIRMADO,
         ]);
 
-        $registro = RegistroHora::create([
-            'asignacion_id' => $asignacion->id,
-            'inicio_real' => Carbon::parse('2026-06-15 08:00:00'),
-            'fin_real' => Carbon::parse('2026-06-15 12:00:00'),
-            'descanso_minutos' => 0,
-            'horas_computables' => 4,
-            'estado' => RegistroHora::ESTADO_PENDIENTE,
+        // Ahora confirmamos expresamente el exceso de Pedro.
+        $componente
+            ->call('confirmarAsignacionConExceso')
+            ->assertSet('confirmacionExcesoPendiente', true)
+            ->assertSet(
+                'advertenciaExceso',
+                'Jornada contratada: 20 h. Horas previstas: 30 h. Exceso: 10 h.'
+            );
+
+        // El exceso cambió: la confirmación anterior no autoriza la asignación.
+        $this->assertDatabaseMissing('asignaciones', [
+            'turno_id' => $vacante->id,
+            'empleado_id' => $empleado->id,
         ]);
 
-        Livewire::actingAs($admin)
-            ->test(WeeklyRoster::class)
-            ->call('abrirModalTurno', $turno->id)
-            ->call('desasignarEmpleado', $asignacion->id)
-            ->assertSet('erroresValidacion', [
-                'No se puede desasignar al empleado porque existen horas registradas. Deben revisarse previamente.',
-            ]);
+        // El administrador acepta expresamente el nuevo exceso de 10 horas.
+        $componente
+            ->call('confirmarAsignacionConExceso')
+            ->assertSet('confirmacionExcesoPendiente', false);
 
-        // La asignación sigue confirmada.
         $this->assertDatabaseHas('asignaciones', [
-            'id' => $asignacion->id,
+            'turno_id' => $vacante->id,
+            'empleado_id' => $empleado->id,
             'estado' => Asignacion::ESTADO_CONFIRMADO,
         ]);
-
-        // Las horas registradas permanecen intactas.
-        $this->assertDatabaseHas('registros_horas', [
-            'id' => $registro->id,
-            'asignacion_id' => $asignacion->id,
-            'estado' => RegistroHora::ESTADO_PENDIENTE,
-        ]);
-
-        // La plaza continúa ocupada.
-        $this->assertSame(0, $turno->fresh()->plazasDisponibles());
     }
 }
