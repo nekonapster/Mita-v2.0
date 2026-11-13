@@ -687,6 +687,14 @@ class WeeklyRosterGenerationTest extends TestCase
             'activo' => true,
         ]);
 
+        Contrato::create([
+            'empleado_id' => $empleado->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'jornada_semanal_horas' => 40,
+        ]);
+
         $cliente = Cliente::create([
             'razon_social' => 'Ayuntamiento de Mairena',
         ]);
@@ -747,6 +755,29 @@ class WeeklyRosterGenerationTest extends TestCase
 
         // La plaza vuelve a estar disponible.
         $this->assertSame(1, $turno->fresh()->plazasDisponibles());
+
+        // Reasignar al mismo empleado después de cancelar.
+        Livewire::actingAs($administrador)
+            ->test(WeeklyRoster::class)
+            ->call('abrirModalTurno', $turno->id)
+            ->set('nuevoEmpleadoId', $empleado->id)
+            ->call('asignarEmpleado')
+            ->assertHasNoErrors();
+
+        // La asignación debe volver a estar activa.
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        // No debe existir más de una asignación para el mismo empleado y turno.
+        $this->assertSame(
+            1,
+            Asignacion::where('turno_id', $turno->id)
+                ->where('empleado_id', $empleado->id)
+                ->count()
+        );
     }
     public function test_planificador_puede_asignar_personal(): void
     {
@@ -933,6 +964,13 @@ class WeeklyRosterGenerationTest extends TestCase
             ),
         ]);
 
+        // Simular una asignación anterior que fue cancelada.
+        $asignacionCancelada = Asignacion::create([
+            'turno_id' => $vacante->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
         $componente = Livewire::actingAs($administrador)
             ->test(WeeklyRoster::class)
             ->call('abrirModalTurno', $vacante->id)
@@ -944,10 +982,12 @@ class WeeklyRosterGenerationTest extends TestCase
                 'Jornada contratada: 20 h. Horas previstas: 26 h. Exceso: 6 h.'
             );
 
-        // Primera pulsación: no se debe crear la asignación.
-        $this->assertDatabaseMissing('asignaciones', [
+        // Primera pulsación: la asignación debe seguir cancelada.
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacionCancelada->id,
             'turno_id' => $vacante->id,
             'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
         ]);
 
         // El administrador confirma expresamente el exceso.
@@ -1008,10 +1048,12 @@ class WeeklyRosterGenerationTest extends TestCase
                 'Jornada contratada: 20 h. Horas previstas: 30 h. Exceso: 10 h.'
             );
 
-        // El exceso cambió: la confirmación anterior no autoriza la asignación.
-        $this->assertDatabaseMissing('asignaciones', [
+        // El exceso cambió: la asignación debe permanecer cancelada.
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacionCancelada->id,
             'turno_id' => $vacante->id,
             'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
         ]);
 
         // El administrador acepta expresamente el nuevo exceso de 10 horas.

@@ -485,6 +485,37 @@
                 </div>
                 @endif
 
+                {{-- Confirmación de exceso de jornada semanal --}}
+                @if($confirmacionExcesoPendiente && $advertenciaExceso)
+                <div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-3">
+
+                    <p class="text-amber-300 font-bold text-sm">
+                        ⚠ Exceso de jornada semanal
+                    </p>
+
+                    <p class="text-amber-100 text-xs">
+                        {{ $advertenciaExceso }}
+                    </p>
+
+                    <p class="text-amber-200/80 text-xs">
+                        Esta asignación supera la jornada contratada.
+                        ¿Querés autorizarla expresamente?
+                    </p>
+
+                    <div class="flex gap-2">
+                        <button type="button" wire:click="confirmarAsignacionConExceso" wire:loading.attr="disabled"
+                            class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold">
+                            Confirmar exceso
+                        </button>
+
+                        <button type="button" wire:click="$set('confirmacionExcesoPendiente', false)"
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-semibold">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+                @endif
+
                 <div class="flex gap-2">
                     <select wire:model="nuevoEmpleadoId"
                         class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-cyan-500">

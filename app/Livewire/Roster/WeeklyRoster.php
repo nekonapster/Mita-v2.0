@@ -195,12 +195,14 @@ class WeeklyRoster extends Component
             }
         }
 
-        Asignacion::create([
+        $asignacion = Asignacion::firstOrNew([
             'turno_id' => $this->turnoSeleccionado->id,
             'empleado_id' => $empleado->id,
-            'estado' => Asignacion::ESTADO_CONFIRMADO,
-            'tiene_conflicto' => false,
         ]);
+
+        $asignacion->estado = Asignacion::ESTADO_CONFIRMADO;
+        $asignacion->tiene_conflicto = false;
+        $asignacion->save();
 
         $this->turnoSeleccionado->refresh();
         $this->turnoSeleccionado->load('asignacionesActivas.empleado.categoria');
@@ -349,12 +351,15 @@ class WeeklyRoster extends Component
 
             return;
         }
-        Asignacion::create([
+
+        $asignacion = Asignacion::firstOrNew([
             'turno_id' => $turno->id,
             'empleado_id' => $empleado->id,
-            'estado' => Asignacion::ESTADO_CONFIRMADO,
-            'tiene_conflicto' => false,
         ]);
+
+        $asignacion->estado = Asignacion::ESTADO_CONFIRMADO;
+        $asignacion->tiene_conflicto = false;
+        $asignacion->save();
 
         $this->turnoSeleccionado = $turno->fresh();
         $this->turnoSeleccionado->load(
