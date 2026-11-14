@@ -63,12 +63,13 @@ class AutomaticScheduleService
                 continue;
             }
 
-            // Buscar trabajadores de la categoría necesaria.
+            // Buscar empleados con la habilidad requerida por el turno.
             $empleados = Empleado::query()
                 ->where('activo', true)
-                ->where('categoria_id', $turno->categoria_id)
-                ->get()
-                ->sortBy(fn($empleado) => [
+                ->whereHas('categoriasHabilitadas', function ($query) use ($turno) {
+                    $query->where('categorias.id', $turno->categoria_id);
+                })
+                ->get()->sortBy(fn($empleado) => [
                     $horasAsignadas[$empleado->id] ?? 0,
                     $empleado->id,
                 ]);

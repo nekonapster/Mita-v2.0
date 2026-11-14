@@ -611,6 +611,11 @@ class WeeklyRosterGenerationTest extends TestCase
             'activo' => true,
         ]);
 
+        // Habilitar al empleado para cubrir turnos de su especialidad.
+        $empleado->categoriasHabilitadas()->sync([
+            $categoria->id,
+        ]);
+
         Contrato::create([
             'empleado_id' => $empleado->id,
             'tipo_contrato' => 'Indefinido',
@@ -685,6 +690,10 @@ class WeeklyRosterGenerationTest extends TestCase
             'apellidos' => 'García',
             'categoria_id' => $categoria->id,
             'activo' => true,
+        ]);
+        // Habilitar al empleado para cubrir su categoría.
+        $empleado->categoriasHabilitadas()->sync([
+            $categoria->id,
         ]);
 
         Contrato::create([
@@ -802,6 +811,11 @@ class WeeklyRosterGenerationTest extends TestCase
             'activo' => true,
         ]);
 
+        // Habilitar al empleado para cubrir el turno.
+        $empleado->categoriasHabilitadas()->sync([
+            $categoria->id,
+        ]);
+
         Contrato::create([
             'empleado_id' => $empleado->id,
             'tipo_contrato' => 'Indefinido',
@@ -878,6 +892,11 @@ class WeeklyRosterGenerationTest extends TestCase
             'apellidos' => 'García',
             'categoria_id' => $categoria->id,
             'activo' => true,
+        ]);
+
+        // Habilitar al empleado para cubrir el turno.
+        $empleado->categoriasHabilitadas()->sync([
+            $categoria->id,
         ]);
 
         Contrato::create([

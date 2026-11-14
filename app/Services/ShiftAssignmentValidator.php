@@ -32,11 +32,16 @@ class ShiftAssignmentValidator
             $errores[] = 'El empleado no dispone de un contrato laboral vigente para las fechas del turno (' . $turnoInicio->format('d/m/Y') . ').';
         }
 
-        // 3. Categoría profesional compatible
-        if ($turno->categoria_id && $empleado->categoria_id !== $turno->categoria_id) {
+        // 3. Comprobar que el empleado tiene la habilidad requerida.
+        if (
+            $turno->categoria_id &&
+            ! $empleado->categoriasHabilitadas()
+                ->where('categorias.id', $turno->categoria_id)
+                ->exists()
+        ) {
             $categoriaRequerida = $turno->categoria?->nombre ?? 'la requerida';
-            $categoriaEmpleado = $empleado->categoria?->nombre ?? 'sin asignar';
-            $errores[] = "La categoría profesional del empleado ({$categoriaEmpleado}) no coincide con la requerida por el turno ({$categoriaRequerida}).";
+
+            $errores[] = "El empleado no tiene habilitada la categoría requerida por el turno ({$categoriaRequerida}).";
         }
 
         // 4. Asignación duplicada en el mismo turno

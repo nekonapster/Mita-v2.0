@@ -43,6 +43,11 @@ class ShiftAssignmentValidationTest extends TestCase
             'activo' => true,
         ]);
 
+        // Juan está habilitado para trabajar como socorrista.
+        $this->empleado->categoriasHabilitadas()->sync([
+            $this->catSocorrista->id,
+        ]);
+
         Contrato::create([
             'empleado_id' => $this->empleado->id,
             'tipo_contrato' => 'Indefinido',
@@ -104,11 +109,24 @@ class ShiftAssignmentValidationTest extends TestCase
 
     public function test_incompatible_category_fails(): void
     {
-        $this->empleado->update(['categoria_id' => $this->catMonitor->id]);
+        // Juan conserva su categoría contractual de socorrista.
+        // Pero solo está habilitado para trabajar como monitor.
+        $this->empleado->categoriasHabilitadas()->sync([
+            $this->catMonitor->id,
+        ]);
 
-        $res = $this->validator->validarAsignacion($this->turno, $this->empleado);
+        // El turno requiere la habilidad SOC.
+        $res = $this->validator->validarAsignacion(
+            $this->turno,
+            $this->empleado
+        );
+
         $this->assertFalse($res['valido']);
-        $this->assertStringContainsString('categoría profesional', $res['errores'][0]);
+
+        $this->assertStringContainsString(
+            'no tiene habilitada',
+            $res['errores'][0]
+        );
     }
 
     public function test_approved_absence_conflict_fails(): void
@@ -632,109 +650,131 @@ class ShiftAssignmentValidationTest extends TestCase
     }
 
     public function test_employee_cannot_open_cancelled_assignment(): void
-{
-    // El turno está publicado
-    $this->turno->update([
-        'estado' => Turno::ESTADO_PUBLICADO,
-    ]);
+    {
+        // El turno está publicado
+        $this->turno->update([
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
 
-    // Pero la asignación está cancelada
-    $asignacion = Asignacion::create([
-        'turno_id' => $this->turno->id,
-        'empleado_id' => $this->empleado->id,
-        'estado' => Asignacion::ESTADO_CANCELADO,
-    ]);
+        // Pero la asignación está cancelada
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
 
-    // Crear usuario vinculado al empleado
-    $rol = \App\Models\Role::firstOrCreate(
-        ['name' => \App\Models\Role::EMPLOYEE],
-        ['display_name' => 'Empleado']
-    );
+        // Crear usuario vinculado al empleado
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
 
-    $usuario = \App\Models\User::create([
-        'name' => 'Juan',
-        'email' => 'juan_modal_cancelado@test.es',
-        'password' => bcrypt('password123'),
-        'employee_id' => $this->empleado->id,
-    ]);
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_modal_cancelado@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
 
-    $usuario->roles()->attach($rol->id);
+        $usuario->roles()->attach($rol->id);
 
-    // Intentar abrir la asignación cancelada
-    \Livewire\Livewire::actingAs($usuario)
-        ->test(\App\Livewire\Portal\EmployeePortal::class)
-        ->call('abrirModalImputar', $asignacion->id)
-        ->assertForbidden();
+        // Intentar abrir la asignación cancelada
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->call('abrirModalImputar', $asignacion->id)
+            ->assertForbidden();
 
-    // La asignación permanece como historial
-    $this->assertDatabaseHas('asignaciones', [
-        'id' => $asignacion->id,
-        'estado' => Asignacion::ESTADO_CANCELADO,
-    ]);
-}
-public function test_empleado_puede_trabajar_dos_turnos_partidos(): void
-{
-    // Primer turno: 10:00 a 18:00.
-    Asignacion::create([
-        'turno_id' => $this->turno->id,
-        'empleado_id' => $this->empleado->id,
-        'estado' => Asignacion::ESTADO_CONFIRMADO,
-    ]);
+        // La asignación permanece como historial
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacion->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+    }
+    public function test_empleado_puede_trabajar_dos_turnos_partidos(): void
+    {
+        // Primer turno: 10:00 a 18:00.
+        Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
 
-    // Segundo turno: 19:00 a 22:00.
-    $segundoTurno = Turno::create([
-        'proyecto_id' => $this->turno->proyecto_id,
-        'instalacion_id' => $this->turno->instalacion_id,
-        'actividad_id' => $this->turno->actividad_id,
-        'categoria_id' => $this->catSocorrista->id,
-        'fecha' => '2026-06-15',
-        'hora_inicio' => Carbon::parse('2026-06-15 19:00:00', 'Europe/Madrid'),
-        'hora_fin' => Carbon::parse('2026-06-15 22:00:00', 'Europe/Madrid'),
-        'plazas_necesarias' => 1,
-        'estado' => Turno::ESTADO_PUBLICADO,
-    ]);
+        // Segundo turno: 19:00 a 22:00.
+        $segundoTurno = Turno::create([
+            'proyecto_id' => $this->turno->proyecto_id,
+            'instalacion_id' => $this->turno->instalacion_id,
+            'actividad_id' => $this->turno->actividad_id,
+            'categoria_id' => $this->catSocorrista->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 19:00:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-15 22:00:00', 'Europe/Madrid'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
 
-    $resultado = $this->validator->validarAsignacion(
-        $segundoTurno,
-        $this->empleado
-    );
+        $resultado = $this->validator->validarAsignacion(
+            $segundoTurno,
+            $this->empleado
+        );
 
-    $this->assertTrue(
-        $resultado['valido'],
-        implode(' | ', $resultado['errores'])
-    );
-}
-public function test_empleado_puede_enlazar_dos_turnos_sin_solapamiento(): void
-{
-    // Primer turno: 10:00 a 18:00.
-    Asignacion::create([
-        'turno_id' => $this->turno->id,
-        'empleado_id' => $this->empleado->id,
-        'estado' => Asignacion::ESTADO_CONFIRMADO,
-    ]);
+        $this->assertTrue(
+            $resultado['valido'],
+            implode(' | ', $resultado['errores'])
+        );
+    }
+    public function test_empleado_puede_enlazar_dos_turnos_sin_solapamiento(): void
+    {
+        // Primer turno: 10:00 a 18:00.
+        Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
 
-    // Segundo turno: comienza exactamente a las 18:00.
-    $segundoTurno = Turno::create([
-        'proyecto_id' => $this->turno->proyecto_id,
-        'instalacion_id' => $this->turno->instalacion_id,
-        'actividad_id' => $this->turno->actividad_id,
-        'categoria_id' => $this->catSocorrista->id,
-        'fecha' => '2026-06-15',
-        'hora_inicio' => Carbon::parse('2026-06-15 18:00:00', 'Europe/Madrid'),
-        'hora_fin' => Carbon::parse('2026-06-15 20:00:00', 'Europe/Madrid'),
-        'plazas_necesarias' => 1,
-        'estado' => Turno::ESTADO_PUBLICADO,
-    ]);
+        // Segundo turno: comienza exactamente a las 18:00.
+        $segundoTurno = Turno::create([
+            'proyecto_id' => $this->turno->proyecto_id,
+            'instalacion_id' => $this->turno->instalacion_id,
+            'actividad_id' => $this->turno->actividad_id,
+            'categoria_id' => $this->catSocorrista->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 18:00:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-15 20:00:00', 'Europe/Madrid'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
 
-    $resultado = $this->validator->validarAsignacion(
-        $segundoTurno,
-        $this->empleado
-    );
+        $resultado = $this->validator->validarAsignacion(
+            $segundoTurno,
+            $this->empleado
+        );
 
-    $this->assertTrue(
-        $resultado['valido'],
-        implode(' | ', $resultado['errores'])
-    );
-}
+        $this->assertTrue(
+            $resultado['valido'],
+            implode(' | ', $resultado['errores'])
+        );
+    }
 
+    public function test_empleado_puede_cubrir_turno_por_habilidad_aunque_su_categoria_contractual_sea_distinta(): void
+    {
+        // Juan está contratado como monitor.
+        $this->empleado->update([
+            'categoria_id' => $this->catMonitor->id,
+        ]);
+
+        // Pero está habilitado para trabajar como socorrista.
+        $this->empleado->categoriasHabilitadas()->sync([
+            $this->catMonitor->id,
+            $this->catSocorrista->id,
+        ]);
+
+        // El turno requiere la habilidad SOC.
+        $resultado = $this->validator->validarAsignacion(
+            $this->turno,
+            $this->empleado
+        );
+
+        $this->assertTrue($resultado['valido'], implode(' | ', $resultado['errores']));
+        $this->assertEmpty($resultado['errores']);
+    }
 }

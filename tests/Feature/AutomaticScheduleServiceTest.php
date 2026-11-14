@@ -100,12 +100,23 @@ class AutomaticScheduleServiceTest extends TestCase
             'categoria_id' => $categoria->id,
             'activo' => true,
         ]);
+        // Pedro tiene categoría contractual de monitor.
+        $categoriaMonitor = Categoria::create([
+            'nombre' => 'Monitor',
+            'codigo' => 'MON',
+        ]);
 
         $pedro = Empleado::create([
             'nombre' => 'Pedro',
             'apellidos' => 'García',
-            'categoria_id' => $categoria->id,
+            'categoria_id' => $categoriaMonitor->id,
             'activo' => true,
+        ]);
+
+        // Está habilitado para trabajar como socorrista.
+        $pedro->categoriasHabilitadas()->sync([
+            $categoriaMonitor->id,
+            $categoria->id,
         ]);
 
         Contrato::create([
@@ -366,6 +377,11 @@ class AutomaticScheduleServiceTest extends TestCase
             'activo' => true,
         ]);
 
+        // Habilitar a Pedro para cubrir turnos de su especialidad.
+        $pedro->categoriasHabilitadas()->sync([
+            $categoria->id,
+        ]);
+
         Contrato::create([
             'empleado_id' => $pedro->id,
             'tipo_contrato' => 'Indefinido',
@@ -511,6 +527,11 @@ class AutomaticScheduleServiceTest extends TestCase
             'activo' => true,
         ]);
 
+        // Habilitar al empleado para cubrir la categoría requerida.
+        $empleado->categoriasHabilitadas()->sync([
+            $categoria->id,
+        ]);
+
         Contrato::create([
             'empleado_id' => $empleado->id,
             'tipo_contrato' => 'Indefinido',
@@ -603,6 +624,11 @@ class AutomaticScheduleServiceTest extends TestCase
             'apellidos' => 'García',
             'categoria_id' => $categoria->id,
             'activo' => true,
+        ]);
+
+        // Habilitar al empleado para cubrir los turnos de su especialidad.
+        $empleado->categoriasHabilitadas()->sync([
+            $categoria->id,
         ]);
 
         Contrato::create([
@@ -705,6 +731,10 @@ class AutomaticScheduleServiceTest extends TestCase
         ]);
 
         foreach ([$juan, $pedro] as $empleado) {
+            // Ambos empleados están habilitados para cubrir turnos SOC.
+            $empleado->categoriasHabilitadas()->sync([
+                $categoria->id,
+            ]);
             Contrato::create([
                 'empleado_id' => $empleado->id,
                 'tipo_contrato' => 'Indefinido',
@@ -811,6 +841,10 @@ class AutomaticScheduleServiceTest extends TestCase
         ]);
 
         foreach ([$juan, $pedro] as $empleado) {
+            // Habilitar a ambos empleados para cubrir turnos SOC.
+            $empleado->categoriasHabilitadas()->sync([
+                $categoria->id,
+            ]);
             Contrato::create([
                 'empleado_id' => $empleado->id,
                 'tipo_contrato' => 'Indefinido',
@@ -923,6 +957,11 @@ class AutomaticScheduleServiceTest extends TestCase
             'apellidos' => 'García',
             'categoria_id' => $categoria->id,
             'activo' => true,
+        ]);
+
+        // Pedro está habilitado para cubrir turnos de socorrista.
+        $pedro->categoriasHabilitadas()->sync([
+            $categoria->id,
         ]);
 
         Contrato::create([
@@ -1114,6 +1153,11 @@ class AutomaticScheduleServiceTest extends TestCase
             'activo' => true,
         ]);
 
+        // Pedro está habilitado para cubrir turnos SOC.
+        $pedro->categoriasHabilitadas()->sync([
+            $categoria->id,
+        ]);
+
         Contrato::create([
             'empleado_id' => $pedro->id,
             'tipo_contrato' => 'Indefinido',
@@ -1227,6 +1271,11 @@ class AutomaticScheduleServiceTest extends TestCase
             'apellidos' => 'García',
             'categoria_id' => $categoria->id,
             'activo' => true,
+        ]);
+
+        // Pedro está habilitado para cubrir turnos SOC.
+        $pedro->categoriasHabilitadas()->sync([
+            $categoria->id,
         ]);
 
         Contrato::create([
@@ -1354,124 +1403,132 @@ class AutomaticScheduleServiceTest extends TestCase
     }
 
 
-public function test_generador_respeta_cambio_de_jornada_entre_contratos(): void
-{
-    $categoria = Categoria::create([
-        'nombre' => 'Socorrista',
-        'codigo' => 'SOC',
-    ]);
+    public function test_generador_respeta_cambio_de_jornada_entre_contratos(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
 
-    $pedro = Empleado::create([
-        'nombre' => 'Pedro',
-        'apellidos' => 'García',
-        'categoria_id' => $categoria->id,
-        'activo' => true,
-    ]);
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
 
-    // Junio: 20 horas semanales.
-    Contrato::create([
-        'empleado_id' => $pedro->id,
-        'tipo_contrato' => 'Temporal',
-        'fecha_inicio' => '2026-06-01',
-        'fecha_fin' => '2026-06-30',
-        'jornada_semanal_horas' => 20,
-    ]);
+        // Pedro está habilitado para cubrir turnos SOC.
+        $pedro->categoriasHabilitadas()->sync([
+            $categoria->id,
+        ]);
 
-    // Julio: 30 horas semanales.
-    Contrato::create([
-        'empleado_id' => $pedro->id,
-        'tipo_contrato' => 'Temporal',
-        'fecha_inicio' => '2026-07-01',
-        'fecha_fin' => '2026-07-31',
-        'jornada_semanal_horas' => 30,
-    ]);
+        // Junio: 20 horas semanales.
+        Contrato::create([
+            'empleado_id' => $pedro->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'jornada_semanal_horas' => 20,
+        ]);
 
-    $cliente = Cliente::create([
-        'razon_social' => 'Cliente Test',
-    ]);
+        // Julio: 30 horas semanales.
+        Contrato::create([
+            'empleado_id' => $pedro->id,
+            'tipo_contrato' => 'Temporal',
+            'fecha_inicio' => '2026-07-01',
+            'fecha_fin' => '2026-07-31',
+            'jornada_semanal_horas' => 30,
+        ]);
 
-    $instalacion = Instalacion::create([
-        'cliente_id' => $cliente->id,
-        'nombre' => 'Piscina Municipal',
-    ]);
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
 
-    $actividad = Actividad::create([
-        'nombre' => 'Socorrismo',
-    ]);
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
 
-    $proyecto = Proyecto::create([
-        'cliente_id' => $cliente->id,
-        'nombre' => 'Proyecto Test',
-        'fecha_inicio' => '2026-01-01',
-    ]);
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
 
-    $datosTurno = [
-        'proyecto_id' => $proyecto->id,
-        'instalacion_id' => $instalacion->id,
-        'actividad_id' => $actividad->id,
-        'categoria_id' => $categoria->id,
-        'plazas_necesarias' => 1,
-        'estado' => Turno::ESTADO_PUBLICADO,
-    ];
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
 
-    // Usamos semanas distintas para evitar el cambio a mitad de semana.
-    foreach ([
-        ['2026-06-15', '2026-06-16', '2026-06-17', false],
-        ['2026-07-06', '2026-07-07', '2026-07-08', true],
-    ] as [$lunes, $martes, $miercoles, $debeAsignar]) {
-        foreach ([
-            [$lunes, '08:00', '18:00'],
-            [$martes, '08:00', '16:00'],
-        ] as [$fecha, $inicio, $fin]) {
-            $turno = Turno::create($datosTurno + [
-                'fecha' => $fecha,
+        $datosTurno = [
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ];
+
+        // Usamos semanas distintas para evitar el cambio a mitad de semana.
+        foreach (
+            [
+                ['2026-06-15', '2026-06-16', '2026-06-17', false],
+                ['2026-07-06', '2026-07-07', '2026-07-08', true],
+            ] as [$lunes, $martes, $miercoles, $debeAsignar]
+        ) {
+            foreach (
+                [
+                    [$lunes, '08:00', '18:00'],
+                    [$martes, '08:00', '16:00'],
+                ] as [$fecha, $inicio, $fin]
+            ) {
+                $turno = Turno::create($datosTurno + [
+                    'fecha' => $fecha,
+                    'hora_inicio' => Carbon::parse(
+                        "$fecha $inicio",
+                        'Europe/Madrid'
+                    ),
+                    'hora_fin' => Carbon::parse(
+                        "$fecha $fin",
+                        'Europe/Madrid'
+                    ),
+                ]);
+
+                Asignacion::create([
+                    'turno_id' => $turno->id,
+                    'empleado_id' => $pedro->id,
+                    'estado' => Asignacion::ESTADO_CONFIRMADO,
+                ]);
+            }
+
+            // Miércoles: vacante de 8 horas.
+            $vacante = Turno::create($datosTurno + [
+                'fecha' => $miercoles,
                 'hora_inicio' => Carbon::parse(
-                    "$fecha $inicio",
+                    "$miercoles 08:00",
                     'Europe/Madrid'
                 ),
                 'hora_fin' => Carbon::parse(
-                    "$fecha $fin",
+                    "$miercoles 16:00",
                     'Europe/Madrid'
                 ),
             ]);
 
-            Asignacion::create([
-                'turno_id' => $turno->id,
-                'empleado_id' => $pedro->id,
-                'estado' => Asignacion::ESTADO_CONFIRMADO,
-            ]);
+            app(AutomaticScheduleService::class)->generar(
+                $proyecto,
+                $miercoles,
+                $miercoles
+            );
+
+            $existeAsignacion = Asignacion::where(
+                'turno_id',
+                $vacante->id
+            )->where('empleado_id', $pedro->id)->exists();
+
+            $this->assertSame(
+                $debeAsignar,
+                $existeAsignacion,
+                "Resultado inesperado para el turno del $miercoles"
+            );
         }
-
-        // Miércoles: vacante de 8 horas.
-        $vacante = Turno::create($datosTurno + [
-            'fecha' => $miercoles,
-            'hora_inicio' => Carbon::parse(
-                "$miercoles 08:00",
-                'Europe/Madrid'
-            ),
-            'hora_fin' => Carbon::parse(
-                "$miercoles 16:00",
-                'Europe/Madrid'
-            ),
-        ]);
-
-        app(AutomaticScheduleService::class)->generar(
-            $proyecto,
-            $miercoles,
-            $miercoles
-        );
-
-        $existeAsignacion = Asignacion::where(
-            'turno_id',
-            $vacante->id
-        )->where('empleado_id', $pedro->id)->exists();
-
-        $this->assertSame(
-            $debeAsignar,
-            $existeAsignacion,
-            "Resultado inesperado para el turno del $miercoles"
-        );
     }
-}
-
 }

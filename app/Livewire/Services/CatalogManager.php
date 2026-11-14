@@ -60,7 +60,18 @@ class CatalogManager extends Component
     {
         try {
             $cat = Categoria::withCount('empleados')->findOrFail($id);
-            if ($cat->empleados_count > 0 || $cat->necesidadesServicio()->count() > 0) {
+            if (
+                $cat->empleados_count > 0 ||
+                $cat->necesidadesServicio()->exists() ||
+                $cat->turnos()->exists() ||
+                $cat->tarifasCoste()->exists() ||
+                $cat->belongsToMany(
+                    \App\Models\Empleado::class,
+                    'categoria_empleado',
+                    'categoria_id',
+                    'empleado_id'
+                )->exists()
+            ) {
                 $this->feedbackError = "No se puede eliminar la categoría '{$cat->nombre}' porque está vinculada a empleados o servicios. Desactívala en su lugar.";
                 $this->feedbackMessage = null;
                 return;
