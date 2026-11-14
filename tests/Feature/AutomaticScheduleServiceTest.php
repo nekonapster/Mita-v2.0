@@ -1003,10 +1003,10 @@ class AutomaticScheduleServiceTest extends TestCase
             'estado' => Turno::ESTADO_PUBLICADO,
         ]);
 
-        // Juan estaba asignado, pero se canceló su participación.
+        // Pedro estaba asignado, pero su asignación fue cancelada.
         $asignacionCancelada = Asignacion::create([
             'turno_id' => $turno->id,
-            'empleado_id' => $juan->id,
+            'empleado_id' => $pedro->id,
             'estado' => Asignacion::ESTADO_CANCELADO,
         ]);
 
@@ -1026,7 +1026,102 @@ class AutomaticScheduleServiceTest extends TestCase
             'estado' => Asignacion::ESTADO_ASIGNADO,
         ]);
 
-        // La asignación cancelada de Juan debe conservarse.
+        // Debe reutilizar la asignación original, sin duplicarla.
+        $this->assertDatabaseCount('asignaciones', 1);
+
+        $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacionCancelada->id,
+            'turno_id' => $turno->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        // La plaza queda cubierta, sin sobreasignaciones.
+        $this->assertSame(0, $turno->fresh()->plazasDisponibles());
+    }
+
+    public function test_generador_cubre_vacante_con_otro_empleado(): void
+    {
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $juan = Empleado::create([
+            'nombre' => 'Juan',
+            'apellidos' => 'Pérez',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $pedro = Empleado::create([
+            'nombre' => 'Pedro',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        // Pedro está habilitado para cubrir turnos de socorrista.
+        $pedro->categoriasHabilitadas()->sync([
+            $categoria->id,
+        ]);
+
+        Contrato::create([
+            'empleado_id' => $pedro->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Municipal',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 10:00:00', 'Europe/Madrid'),
+            'hora_fin' => Carbon::parse('2026-06-15 18:00:00', 'Europe/Madrid'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        // Juan estaba asignado, pero su participación fue cancelada.
+        $asignacionCancelada = Asignacion::create([
+            'turno_id' => $turno->id,
+            'empleado_id' => $juan->id,
+            'estado' => Asignacion::ESTADO_CANCELADO,
+        ]);
+
+        // El turno continúa publicado y tiene una plaza libre.
+        $this->assertSame(1, $turno->plazasDisponibles());
+
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-15',
+            '2026-06-15'
+        );
+
+        // Juan conserva su asignación cancelada.
         $this->assertDatabaseHas('asignaciones', [
             'id' => $asignacionCancelada->id,
             'turno_id' => $turno->id,
@@ -1034,7 +1129,17 @@ class AutomaticScheduleServiceTest extends TestCase
             'estado' => Asignacion::ESTADO_CANCELADO,
         ]);
 
-        // La plaza queda cubierta, sin sobreasignaciones.
+        // Pedro ocupa la plaza vacante.
+        $this->assertDatabaseHas('asignaciones', [
+            'turno_id' => $turno->id,
+            'empleado_id' => $pedro->id,
+            'estado' => Asignacion::ESTADO_ASIGNADO,
+        ]);
+
+        // Existen dos registros: uno cancelado y otro activo.
+        $this->assertDatabaseCount('asignaciones', 2);
+
+        // El turno queda completamente cubierto.
         $this->assertSame(0, $turno->fresh()->plazasDisponibles());
     }
 

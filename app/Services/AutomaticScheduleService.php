@@ -102,12 +102,17 @@ class AutomaticScheduleService
                 if (!$this->respetaJornadaSemanal($empleado, $turno)) {
                     continue;
                 }
-                Asignacion::create([
-                    'turno_id' => $turno->id,
-                    'empleado_id' => $empleado->id,
-                    'estado' => Asignacion::ESTADO_ASIGNADO,
-                    'tiene_conflicto' => false,
-                ]);
+                // Reactivar una asignación cancelada o crearla si no existe.
+                Asignacion::updateOrCreate(
+                    [
+                        'turno_id' => $turno->id,
+                        'empleado_id' => $empleado->id,
+                    ],
+                    [
+                        'estado' => Asignacion::ESTADO_ASIGNADO,
+                        'tiene_conflicto' => false,
+                    ]
+                );
 
                 $horasAsignadas[$empleado->id] =
                     ($horasAsignadas[$empleado->id] ?? 0)
