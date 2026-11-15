@@ -37,6 +37,13 @@ class TimeEntryValidation extends Component
             'No tienes permisos para validar horas.'
         );
         $registro = RegistroHora::findOrFail($id);
+        // Impedir validar horas de turnos o asignaciones canceladas.
+        abort_if(
+            $registro->asignacion?->estado === \App\Models\Asignacion::ESTADO_CANCELADO ||
+                $registro->asignacion?->turno?->estado === \App\Models\Turno::ESTADO_CANCELADO,
+            403,
+            'No se pueden validar horas de turnos o asignaciones canceladas.'
+        );
         $registro->update([
             'estado' => RegistroHora::ESTADO_VALIDADO,
             'validado_por' => auth()->id(),
@@ -87,6 +94,13 @@ class TimeEntryValidation extends Component
         );
 
         $registro = RegistroHora::findOrFail($this->registroId);
+        // Impedir modificar horas de turnos o asignaciones canceladas.
+        abort_if(
+            $registro->asignacion?->estado === \App\Models\Asignacion::ESTADO_CANCELADO ||
+                $registro->asignacion?->turno?->estado === \App\Models\Turno::ESTADO_CANCELADO,
+            403,
+            'No se pueden modificar horas de turnos o asignaciones canceladas.'
+        );
         $registro->update([
             'inicio_real' => $this->editInicioReal,
             'fin_real' => $this->editFinReal,
