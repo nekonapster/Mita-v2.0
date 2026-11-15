@@ -44,7 +44,9 @@ Route::middleware(['auth'])->group(function () {
             ->can('viewAny', \App\Models\Empleado::class)
             ->name('empleados.show');
         Route::get('/ausencias', AbsenceIndex::class)->name('ausencias');
-        Route::get('/incidencias', IncidentIndex::class)->name('incidencias');
+        Route::get('/incidencias', IncidentIndex::class)
+            ->can('viewAny', \App\Models\Incidencia::class)
+            ->name('incidencias');
     });
 
     // Módulo 2: Gestión de Servicios

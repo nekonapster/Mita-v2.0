@@ -44,6 +44,8 @@ class IncidentIndex extends Component
 
     public function guardarIncidencia(): void
     {
+        \Illuminate\Support\Facades\Gate::authorize('create', Incidencia::class);
+        
         $this->validate([
             'titulo' => 'required|string|max:150',
             'descripcion' => 'required|string|max:2000',
@@ -79,7 +81,21 @@ class IncidentIndex extends Component
     public function cambiarEstado(int $id, string $nuevoEstado): void
     {
         $inc = Incidencia::findOrFail($id);
-        $inc->update(['estado' => $nuevoEstado]);
+
+        // Aplicar la política de autorización existente.
+        \Illuminate\Support\Facades\Gate::authorize('update', $inc);
+
+        // Impedir estados no contemplados por MiTa.
+        if (! in_array($nuevoEstado, ['abierta', 'en_seguimiento', 'resuelta'], true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'estado' => 'El estado de la incidencia no es válido.',
+            ]);
+        }
+
+        $inc->update([
+            'estado' => $nuevoEstado,
+        ]);
+
         $this->feedbackMessage = "Estado de la incidencia actualizado a '{$nuevoEstado}'.";
         $this->feedbackError = null;
     }
@@ -88,11 +104,17 @@ class IncidentIndex extends Component
     {
         try {
             $inc = Incidencia::findOrFail($id);
+
+            // Comprobar permisos antes de eliminar.
+            \Illuminate\Support\Facades\Gate::authorize('delete', $inc);
+
             $titulo = $inc->titulo;
             $inc->delete();
 
             $this->feedbackMessage = "Incidencia '{$titulo}' eliminada correctamente.";
             $this->feedbackError = null;
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             $this->feedbackError = 'Error al eliminar la incidencia: ' . $e->getMessage();
             $this->feedbackMessage = null;
@@ -102,9 +124,9 @@ class IncidentIndex extends Component
     public function render()
     {
         $query = Incidencia::with(['empleado', 'instalacion', 'proyecto', 'creador'])
-            ->when($this->estadoFiltro !== '', fn ($q) => $q->where('estado', $this->estadoFiltro))
-            ->when($this->proyectoFiltro, fn ($q) => $q->where('proyecto_id', $this->proyectoFiltro))
-            ->when($this->instalacionFiltro, fn ($q) => $q->where('instalacion_id', $this->instalacionFiltro))
+            ->when($this->estadoFiltro !== '', fn($q) => $q->where('estado', $this->estadoFiltro))
+            ->when($this->proyectoFiltro, fn($q) => $q->where('proyecto_id', $this->proyectoFiltro))
+            ->when($this->instalacionFiltro, fn($q) => $q->where('instalacion_id', $this->instalacionFiltro))
             ->orderBy('fecha', 'desc');
 
         return view('livewire.rrhh.incident-index', [
