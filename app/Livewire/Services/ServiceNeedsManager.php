@@ -187,12 +187,30 @@ class ServiceNeedsManager extends Component
 
     public function confirmarSync(bool $incluirPublicados = false): void
     {
-        $nec = NecesidadServicio::findOrFail($this->necesidadParaSyncId);
-        $syncService = new ShiftSyncPreviewService();
-        $res = $syncService->sincronizarTurnos($nec, $incluirPublicados);
+        $this->feedbackError = null;
 
-        $this->modalSyncOpen = false;
-        session()->flash('success', "Sincronización completada. Se han actualizado {$res['actualizados']} turnos.");
+        try {
+            $nec = NecesidadServicio::findOrFail($this->necesidadParaSyncId);
+
+            $syncService = new ShiftSyncPreviewService();
+
+            $res = $syncService->sincronizarTurnos(
+                $nec,
+                $incluirPublicados
+            );
+
+            $this->modalSyncOpen = false;
+
+            session()->flash(
+                'success',
+                "Sincronización completada. Se han actualizado {$res['actualizados']} turnos."
+            );
+        } catch (\DomainException $e) {
+            $this->feedbackError = $e->getMessage();
+
+            // Mantener abierto el modal para mostrar la advertencia.
+            $this->modalSyncOpen = true;
+        }
     }
 
     public bool $modalDeleteOpen = false;

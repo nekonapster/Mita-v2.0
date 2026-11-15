@@ -134,10 +134,15 @@ class ShiftSyncPreviewService
                 if ($necesidad->categoria_id && $empleadosAsignados->isNotEmpty()) {
                     $empleadosIncompatibles = $turno->asignacionesActivas()
                         ->whereHas('empleado', function ($query) use ($necesidad) {
-                            $query->where(function ($query) use ($necesidad) {
-                                $query->where('categoria_id', '!=', $necesidad->categoria_id)
-                                    ->orWhereNull('categoria_id');
-                            });
+                            $query->whereDoesntHave(
+                                'categoriasHabilitadas',
+                                function ($query) use ($necesidad) {
+                                    $query->where(
+                                        'categorias.id',
+                                        $necesidad->categoria_id
+                                    );
+                                }
+                            );
                         })
                         ->exists();
 
