@@ -123,13 +123,16 @@ class TimeEntryValidation extends Component
             'validador',
         ])
             ->when($this->estadoFiltro !== '', fn($q) => $q->where('estado', $this->estadoFiltro))
-            ->whereHas('asignacion.turno', function ($q) {
-                if ($this->fechaDesde) {
-                    $q->where('fecha', '>=', $this->fechaDesde);
-                }
-                if ($this->fechaHasta) {
-                    $q->where('fecha', '<=', $this->fechaHasta);
-                }
+            ->when($this->estadoFiltro !== RegistroHora::ESTADO_PENDIENTE, function ($query) {
+                $query->whereHas('asignacion.turno', function ($q) {
+                    if ($this->fechaDesde) {
+                        $q->whereDate('fecha', '>=', $this->fechaDesde);
+                    }
+
+                    if ($this->fechaHasta) {
+                        $q->whereDate('fecha', '<=', $this->fechaHasta);
+                    }
+                });
             })
             ->orderBy('created_at', 'desc');
 

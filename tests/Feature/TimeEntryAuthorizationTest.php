@@ -558,4 +558,80 @@ class TimeEntryAuthorizationTest extends TestCase
             ->call('abrirModalEditar', 999999)
             ->assertNotFound();
     }
+
+    public function test_pendientes_aparecen_fuera_del_rango_de_fechas(): void
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2026-11-16 12:00:00'));
+
+        $admin = User::factory()->create();
+        $rol = Role::firstOrCreate(
+            ['name' => Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+        $admin->roles()->attach($rol->id);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $empleado = Empleado::create([
+            'nombre' => 'Empleado',
+            'apellidos' => 'Pendiente MVP',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente MVP',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalacion MVP',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto MVP',
+            'fecha_inicio' => '2026-11-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-11-18',
+            'hora_inicio' => '2026-11-18 10:00:00',
+            'hora_fin' => '2026-11-18 14:00:00',
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => '2026-11-18 10:00:00',
+            'fin_real' => '2026-11-18 14:00:00',
+            'descanso_minutos' => 15,
+            'horas_computables' => 3.75,
+            'estado' => RegistroHora::ESTADO_PENDIENTE,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(TimeEntryValidation::class)
+            ->assertSet('estadoFiltro', 'pendiente_revision')
+            ->assertSee('Pendiente MVP')
+            ->assertSee('3.75');
+    }
 }
