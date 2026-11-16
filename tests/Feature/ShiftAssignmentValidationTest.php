@@ -777,4 +777,122 @@ class ShiftAssignmentValidationTest extends TestCase
         $this->assertTrue($resultado['valido'], implode(' | ', $resultado['errores']));
         $this->assertEmpty($resultado['errores']);
     }
+    public function test_parte_registrado_en_turno_futuro_aparece_en_historial(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-14 12:00:00'));
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan Usuario',
+            'email' => 'juan_historial@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        \App\Models\RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => $this->turno->hora_inicio,
+            'fin_real' => $this->turno->hora_fin,
+            'descanso_minutos' => 15,
+            'horas_computables' => 7.75,
+            'estado' => \App\Models\RegistroHora::ESTADO_PENDIENTE,
+            'modificado_por' => $usuario->id,
+        ]);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('activeTab', 'imputar')
+            ->assertSee('7.75 h computables')
+            ->assertSee('En Revisión');
+    }
+    public function test_empleado_no_puede_imputar_horas_de_turno_futuro(): void
+    {
+        // Simular el día anterior al turno.
+        $this->travelTo(Carbon::parse('2026-06-14 12:00:00'));
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_futuro@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacion->id)
+            ->set('inicio_real', '2026-06-15T10:00')
+            ->set('fin_real', '2026-06-15T18:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion')
+            ->assertForbidden();
+
+        // No debe registrarse ninguna hora futura.
+        $this->assertDatabaseMissing('registros_horas', [
+            'asignacion_id' => $asignacion->id,
+        ]);
+    }
+
+    public function test_empleado_no_puede_registrar_fin_real_en_el_futuro(): void
+    {
+        // El turno terminó ayer, pero el empleado declara una salida futura.
+        $this->travelTo(Carbon::parse('2026-06-16 12:00:00', 'Europe/Madrid'));
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Juan',
+            'email' => 'juan_fin_futuro@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacion->id)
+            ->set('inicio_real', '2026-06-15T10:00')
+            ->set('fin_real', '2026-06-17T18:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion')
+            ->assertHasErrors(['fin_real']);
+
+        $this->assertDatabaseMissing('registros_horas', [
+            'asignacion_id' => $asignacion->id,
+        ]);
+    }
 }

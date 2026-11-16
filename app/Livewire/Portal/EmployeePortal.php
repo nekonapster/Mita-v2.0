@@ -100,6 +100,13 @@ class EmployeePortal extends Component
             'No se pueden registrar horas en turnos o asignaciones canceladas.'
         );
 
+        // No permitir imputar horas antes de que finalice el turno.
+        abort_if(
+            Carbon::parse($asignacion->turno->hora_fin)->isFuture(),
+            403,
+            'No se pueden imputar horas de un turno que todavía no ha finalizado.'
+        );
+
         // Buscar un registro de horas existente.
         $registroExistente = RegistroHora::where(
             'asignacion_id',
@@ -124,7 +131,16 @@ class EmployeePortal extends Component
         }
         $this->validate([
             'inicio_real' => 'required|date',
-            'fin_real' => 'required|date|after_or_equal:inicio_real',
+            'fin_real' => [
+                'required',
+                'date',
+                'after_or_equal:inicio_real',
+                function ($attribute, $value, $fail) {
+                    if (Carbon::parse($value, 'Europe/Madrid')->isFuture()) {
+                        $fail('La hora de finalización real no puede ser posterior al momento actual.');
+                    }
+                },
+            ],
             'descanso_minutos' => 'required|integer|min:0',
             'observaciones_horas' => 'nullable|string|max:500',
         ]);
@@ -199,10 +215,23 @@ class EmployeePortal extends Component
                 ->get()
                 ->sortBy(fn($a) => $a->turno->hora_inicio);
 
-            // Turnos pasados o de hoy para imputar
+            // Turnos de hoy o anteriores, y turnos futuros con parte ya registrado.
             $turnosParaImputar = Asignacion::where('empleado_id', $empleadoId)
                 ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
-                ->whereHas('turno', fn($q) => $q->where('fecha', '<=', now()->toDateString())->where('estado', '!=', Turno::ESTADO_CANCELADO))
+                ->whereHas(
+                    'turno',
+                    fn($q) =>
+                    $q->where('estado', '!=', Turno::ESTADO_CANCELADO)
+                )
+                ->where(function ($query) {
+                    $query
+                        ->whereHas(
+                            'turno',
+                            fn($q) =>
+                            $q->whereDate('fecha', '<=', now()->toDateString())
+                        )
+                        ->orWhereHas('registroHora');
+                })
                 ->with(['turno.instalacion', 'turno.actividad', 'registroHora'])
                 ->get()
                 ->sortByDesc(fn($a) => $a->turno->hora_inicio);

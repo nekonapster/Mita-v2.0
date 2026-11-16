@@ -77,7 +77,7 @@
                     @php $t = $asig->turno; @endphp
                     <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-2">
                         <div class="flex items-center justify-between">
-                            <span class="font-bold text-white text-sm">{{ $t->fecha->isoFormat('dddd D [de] MMMM') }}</span>
+                            <span class="font-bold text-white text-sm">{{ ucfirst($t->fecha->locale('es')->isoFormat('dddd DD/MM/YYYY')) }}</span>
                             <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-500/20 text-sky-300 font-mono">
                                 {{ Carbon\Carbon::parse($t->hora_inicio)->format('H:i') }} - {{ Carbon\Carbon::parse($t->hora_fin)->format('H:i') }}
                             </span>
