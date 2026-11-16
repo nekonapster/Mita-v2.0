@@ -72,7 +72,9 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('economia')->name('economia.')->group(function () {
         Route::get('/informes', EconomicsDashboard::class)->name('informes');
         Route::get('/tarifas', CostRateManager::class)->name('tarifas');
-        Route::get('/movimientos', EconomicMovementsManager::class)->name('movimientos');
+        Route::get('/movimientos', EconomicMovementsManager::class)
+            ->can('viewAny', \App\Models\MovimientoEconomico::class)
+            ->name('movimientos');
     });
 
     // Portal del Empleado (Turnos asignados e imputación de horas)

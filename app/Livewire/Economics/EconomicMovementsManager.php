@@ -8,6 +8,7 @@ use App\Models\Proyecto;
 use Livewire\Component;
 use Livewire\WithPagination;
 
+
 class EconomicMovementsManager extends Component
 {
     use WithPagination;
@@ -57,6 +58,14 @@ class EconomicMovementsManager extends Component
 
     public function guardar(): void
     {
+        if ($this->movimientoId !== null) {
+            $movimiento = MovimientoEconomico::findOrFail($this->movimientoId);
+
+            \Illuminate\Support\Facades\Gate::authorize('update', $movimiento);
+        } else {
+            \Illuminate\Support\Facades\Gate::authorize('create', MovimientoEconomico::class);
+        }
+
         $this->validate([
             'proyecto_id' => 'required|exists:proyectos,id',
             'instalacion_id' => 'nullable|exists:instalaciones,id',
@@ -109,8 +118,12 @@ class EconomicMovementsManager extends Component
             return;
         }
 
+        // Autorizar antes del try para no ocultar un error 403.
+        $mov = MovimientoEconomico::findOrFail($this->movimientoToDeleteId);
+
+        \Illuminate\Support\Facades\Gate::authorize('delete', $mov);
+
         try {
-            $mov = MovimientoEconomico::findOrFail($this->movimientoToDeleteId);
             $mov->delete();
             $this->modalDeleteOpen = false;
             $this->movimientoToDeleteId = null;
@@ -127,8 +140,8 @@ class EconomicMovementsManager extends Component
     public function render()
     {
         $query = MovimientoEconomico::with(['proyecto', 'instalacion', 'registrador'])
-            ->when($this->proyectoFiltro, fn ($q) => $q->where('proyecto_id', $this->proyectoFiltro))
-            ->when($this->tipoFiltro !== '', fn ($q) => $q->where('tipo', $this->tipoFiltro))
+            ->when($this->proyectoFiltro, fn($q) => $q->where('proyecto_id', $this->proyectoFiltro))
+            ->when($this->tipoFiltro !== '', fn($q) => $q->where('tipo', $this->tipoFiltro))
             ->orderBy('fecha', 'desc');
 
         $instalacionesDelProyecto = $this->proyecto_id
