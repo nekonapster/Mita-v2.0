@@ -663,6 +663,7 @@ class WeeklyRosterGenerationTest extends TestCase
             ->call('asignarEmpleado')
             ->assertHasNoErrors();
 
+        // La asignación debe reactivarse conservando su ID.
         $this->assertDatabaseHas('asignaciones', [
             'turno_id' => $turno->id,
             'empleado_id' => $empleado->id,
@@ -775,6 +776,7 @@ class WeeklyRosterGenerationTest extends TestCase
 
         // La asignación debe volver a estar activa.
         $this->assertDatabaseHas('asignaciones', [
+            'id' => $asignacion->id,
             'turno_id' => $turno->id,
             'empleado_id' => $empleado->id,
             'estado' => Asignacion::ESTADO_CONFIRMADO,
