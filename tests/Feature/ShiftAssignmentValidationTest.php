@@ -895,4 +895,149 @@ class ShiftAssignmentValidationTest extends TestCase
             'asignacion_id' => $asignacion->id,
         ]);
     }
+
+    public function test_empleado_no_ve_turnos_en_borrador(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-14 12:00:00'));
+
+        $this->turno->update([
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Empleado Prueba Borrador',
+            'email' => 'empleado_borrador@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->assertViewHas('turnosFuturos', function ($turnos) use ($asignacion) {
+                return ! $turnos->contains('id', $asignacion->id);
+            });
+    }
+    public function test_empleado_no_puede_abrir_imputacion_de_turno_en_borrador(): void
+    {
+        $this->turno->update([
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Empleado Prueba Imputación',
+            'email' => 'empleado_imputacion_borrador@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->call('abrirModalImputar', $asignacion->id)
+            ->assertForbidden();
+    }
+    public function test_empleado_no_puede_guardar_horas_de_turno_en_borrador(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-14 12:00:00'));
+
+        $this->turno->update([
+            'estado' => Turno::ESTADO_BORRADOR,
+            'hora_inicio' => '2026-06-13 08:00:00',
+            'hora_fin' => '2026-06-13 16:00:00',
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Empleado Prueba Guardado',
+            'email' => 'empleado_guardado_borrador@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('asignacionSeleccionadaId', $asignacion->id)
+            ->set('inicio_real', '2026-06-13T08:00')
+            ->set('fin_real', '2026-06-13T16:00')
+            ->set('descanso_minutos', 0)
+            ->call('guardarImputacion')
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('registros_horas', [
+            'asignacion_id' => $asignacion->id,
+        ]);
+    }
+
+    public function test_empleado_no_ve_turnos_en_borrador_para_imputar(): void
+    {
+        // El turno ya ha finalizado.
+        $this->travelTo(Carbon::parse('2026-06-16 12:00:00'));
+
+        $this->turno->update([
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Empleado Prueba Listado',
+            'email' => 'empleado_listado_borrador@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->assertViewHas('turnosParaImputar', function ($turnos) use ($asignacion) {
+                return ! $turnos->contains('id', $asignacion->id);
+            });
+    }
 }

@@ -49,10 +49,10 @@ class EmployeePortal extends Component
         );
 
         abort_if(
-            $asig->turno?->estado === Turno::ESTADO_CANCELADO ||
+            $asig->turno?->estado !== Turno::ESTADO_PUBLICADO ||
                 $asig->estado === Asignacion::ESTADO_CANCELADO,
             403,
-            'No se pueden imputar horas en turnos o asignaciones canceladas.'
+            'Solo se pueden imputar horas de turnos publicados y asignaciones vigentes.'
         );
 
 
@@ -94,10 +94,10 @@ class EmployeePortal extends Component
 
         // Impedir imputaciones en turnos o asignaciones canceladas.
         abort_if(
-            $asignacion->turno?->estado === Turno::ESTADO_CANCELADO ||
+            $asignacion->turno?->estado !== Turno::ESTADO_PUBLICADO ||
                 $asignacion->estado === Asignacion::ESTADO_CANCELADO,
             403,
-            'No se pueden registrar horas en turnos o asignaciones canceladas.'
+            'Solo se pueden registrar horas de turnos publicados y asignaciones vigentes.'
         );
 
         // No permitir imputar horas antes de que finalice el turno.
@@ -210,7 +210,7 @@ class EmployeePortal extends Component
             // Próximos turnos (futuros o de hoy)
             $turnosFuturos = Asignacion::where('empleado_id', $empleadoId)
                 ->where('estado', '!=', Asignacion::ESTADO_CANCELADO)
-                ->whereHas('turno', fn($q) => $q->where('fecha', '>=', now()->toDateString())->where('estado', '!=', Turno::ESTADO_CANCELADO))
+                ->whereHas('turno', fn($q) => $q->where('fecha', '>=', now()->toDateString())->where('estado', Turno::ESTADO_PUBLICADO))
                 ->with(['turno.instalacion', 'turno.actividad', 'registroHora'])
                 ->get()
                 ->sortBy(fn($a) => $a->turno->hora_inicio);
@@ -221,7 +221,7 @@ class EmployeePortal extends Component
                 ->whereHas(
                     'turno',
                     fn($q) =>
-                    $q->where('estado', '!=', Turno::ESTADO_CANCELADO)
+                    $q->where('estado', Turno::ESTADO_PUBLICADO)
                 )
                 ->where(function ($query) {
                     $query
