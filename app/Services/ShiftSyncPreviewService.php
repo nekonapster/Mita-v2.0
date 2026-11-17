@@ -71,6 +71,16 @@ class ShiftSyncPreviewService
 
             foreach ($turnos as $turno) {
                 $currentDate = Carbon::parse($turno->fecha);
+                // Proteger turnos con registros de horas existentes.
+                if ($turno->asignaciones()
+                    ->whereHas('registroHora')
+                    ->exists()
+                ) {
+                    throw new \DomainException(
+                        "No se puede sincronizar el turno {$turno->id}: "
+                            . 'existen registros de horas asociados.'
+                    );
+                }
                 $hIni = explode(':', $necesidad->hora_inicio);
                 $hFin = explode(':', $necesidad->hora_fin);
 

@@ -869,4 +869,109 @@ class ShiftSyncValidationTest extends TestCase
             'estado' => Asignacion::ESTADO_CONFIRMADO,
         ]);
     }
+    public function test_sincronizacion_no_modifica_turno_con_horas_validadas(): void
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2027-06-15 19:00:00'));
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $empleado = Empleado::create([
+            'nombre' => 'Empleado',
+            'apellidos' => 'Prueba',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $empleado->categoriasHabilitadas()->sync([$categoria->id]);
+
+        Contrato::create([
+            'empleado_id' => $empleado->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2027-01-01',
+            'fecha_fin' => '2027-12-31',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Prueba',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Prueba',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Prueba',
+            'fecha_inicio' => '2027-06-01',
+        ]);
+
+        $necesidad = NecesidadServicio::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha_inicio_vigencia' => '2027-06-01',
+            'fecha_fin_vigencia' => '2027-06-30',
+            'dias_semana' => [1, 2, 3, 4, 5, 6, 7],
+            'hora_inicio' => '10:00:00',
+            'hora_fin' => '18:00:00',
+            'cruza_medianoche' => false,
+            'plazas_necesarias' => 1,
+        ]);
+
+        $turno = Turno::create([
+            'necesidad_servicio_id' => $necesidad->id,
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2027-06-15',
+            'hora_inicio' => '2027-06-15 10:00:00',
+            'hora_fin' => '2027-06-15 18:00:00',
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $turno->id,
+            'empleado_id' => $empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        \App\Models\RegistroHora::create([
+            'asignacion_id' => $asignacion->id,
+            'inicio_real' => '2027-06-15 10:00:00',
+            'fin_real' => '2027-06-15 18:00:00',
+            'descanso_minutos' => 30,
+            'horas_computables' => 7.5,
+            'estado' => \App\Models\RegistroHora::ESTADO_VALIDADO,
+        ]);
+
+        // Se intenta cambiar el horario de un turno ya trabajado.
+        $necesidad->update([
+            'hora_inicio' => '11:00:00',
+        ]);
+
+        $this->expectException(\DomainException::class);
+
+        try {
+            (new ShiftSyncPreviewService())
+                ->sincronizarTurnos($necesidad, true);
+        } finally {
+            // La sincronización no debe alterar el horario histórico.
+            $this->assertEquals(
+                '2027-06-15 10:00:00',
+                $turno->fresh()->hora_inicio->format('Y-m-d H:i:s')
+            );
+        }
+    }
 }
