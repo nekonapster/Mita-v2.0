@@ -124,10 +124,10 @@ class EconomicCalculationService
         $movimientosQuery = MovimientoEconomico::where('proyecto_id', $proyecto->id);
 
         if ($desdeStr) {
-            $movimientosQuery->where('fecha', '>=', $desdeStr);
+            $movimientosQuery->whereDate('fecha', '>=', $desdeStr);
         }
         if ($hastaStr) {
-            $movimientosQuery->where('fecha', '<=', $hastaStr);
+            $movimientosQuery->whereDate('fecha', '<=', $hastaStr);
         }
         if ($instalacionId) {
             $movimientosQuery->where(function ($q) use ($instalacionId) {

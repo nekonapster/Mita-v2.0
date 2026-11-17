@@ -729,4 +729,56 @@ class EconomicCalculationTest extends TestCase
             )->count()
         );
     }
+    public function test_movimientos_economicos_respetan_rango_de_fechas(): void
+    {
+        // Movimientos anteriores al período.
+        MovimientoEconomico::create([
+            'proyecto_id' => $this->proyecto->id,
+            'tipo' => MovimientoEconomico::TIPO_INGRESO,
+            'fecha' => '2026-05-31',
+            'concepto' => 'Ingreso anterior',
+            'importe' => 500,
+        ]);
+
+        // Movimientos en el último día del período.
+        MovimientoEconomico::create([
+            'proyecto_id' => $this->proyecto->id,
+            'tipo' => MovimientoEconomico::TIPO_GASTO,
+            'fecha' => '2026-06-30',
+            'concepto' => 'Gasto último día',
+            'importe' => 50,
+        ]);
+
+        // Movimientos posteriores al período.
+        MovimientoEconomico::create([
+            'proyecto_id' => $this->proyecto->id,
+            'tipo' => MovimientoEconomico::TIPO_GASTO,
+            'fecha' => '2026-07-01',
+            'concepto' => 'Gasto posterior',
+            'importe' => 200,
+        ]);
+
+        // Junio: incluye el 10 y el 30, excluye mayo y julio.
+        $junio = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        $this->assertEquals(1000, $junio['ingresos_totales']);
+        $this->assertEquals(150, $junio['gastos_adicionales']);
+        $this->assertEquals(737.50, $junio['resultado_estimado']);
+
+        // Período sin movimientos ni turnos.
+        $enero = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-01-01',
+            '2026-01-31'
+        );
+
+        $this->assertEquals(0, $enero['ingresos_totales']);
+        $this->assertEquals(0, $enero['gastos_adicionales']);
+        $this->assertEquals(0, $enero['resultado_estimado']);
+        $this->assertEquals(0, $enero['horas_realizadas']);
+    }
 }
