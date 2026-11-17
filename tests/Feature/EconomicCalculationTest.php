@@ -781,4 +781,72 @@ class EconomicCalculationTest extends TestCase
         $this->assertEquals(0, $enero['resultado_estimado']);
         $this->assertEquals(0, $enero['horas_realizadas']);
     }
+    public function test_informe_por_instalacion_excluye_movimientos_generales(): void
+    {
+        $instalacionA = $this->turno->instalacion_id;
+
+        $instalacionB = Instalacion::create([
+            'cliente_id' => $this->proyecto->cliente_id,
+            'nombre' => 'Piscina Secundaria',
+        ]);
+
+        // Movimiento específico de la piscina A.
+        MovimientoEconomico::create([
+            'proyecto_id' => $this->proyecto->id,
+            'instalacion_id' => $instalacionA,
+            'tipo' => MovimientoEconomico::TIPO_INGRESO,
+            'fecha' => '2026-06-10',
+            'concepto' => 'Ingreso piscina A',
+            'importe' => 300,
+        ]);
+
+        // Movimiento específico de la piscina B.
+        MovimientoEconomico::create([
+            'proyecto_id' => $this->proyecto->id,
+            'instalacion_id' => $instalacionB->id,
+            'tipo' => MovimientoEconomico::TIPO_INGRESO,
+            'fecha' => '2026-06-10',
+            'concepto' => 'Ingreso piscina B',
+            'importe' => 500,
+        ]);
+
+        // El setUp ya incluye ingresos generales de 1000 €
+        // y gastos generales de 100 €.
+
+        $informeA = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30',
+            $instalacionA
+        );
+
+        $informeB = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30',
+            $instalacionB->id
+        );
+
+        $informeGlobal = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        $this->assertEquals(300, $informeA['ingresos_totales']);
+        $this->assertEquals(0, $informeA['gastos_adicionales']);
+
+        $this->assertEquals(500, $informeB['ingresos_totales']);
+        $this->assertEquals(0, $informeB['gastos_adicionales']);
+
+        $this->assertEquals(1800, $informeGlobal['ingresos_totales']);
+        $this->assertEquals(100, $informeGlobal['gastos_adicionales']);
+
+        // La suma de los informes individuales no debe incluir
+        // los movimientos generales del proyecto.
+        $this->assertEquals(
+            800,
+            $informeA['ingresos_totales'] + $informeB['ingresos_totales']
+        );
+    }
 }

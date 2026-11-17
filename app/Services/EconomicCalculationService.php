@@ -129,11 +129,8 @@ class EconomicCalculationService
         if ($hastaStr) {
             $movimientosQuery->whereDate('fecha', '<=', $hastaStr);
         }
-        if ($instalacionId) {
-            $movimientosQuery->where(function ($q) use ($instalacionId) {
-                $q->where('instalacion_id', $instalacionId)
-                    ->orWhereNull('instalacion_id');
-            });
+        if ($instalacionId !== null) {
+            $movimientosQuery->where('instalacion_id', $instalacionId);
         }
 
         $movimientos = $movimientosQuery->get();
