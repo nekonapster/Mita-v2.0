@@ -139,7 +139,9 @@ class EconomicCalculationService
         $gastosAdicionales = (float) $movimientos->where('tipo', MovimientoEconomico::TIPO_GASTO)->sum('importe');
 
         // 4. Resultado interno estimado = Ingresos - Coste de Personal Real - Gastos Adicionales
-        $resultadoEstimado = $ingresosTotales - $costePersonalReal - $gastosAdicionales;
+        $resultadoEstimado = round($ingresosTotales, 2)
+            - round($costePersonalReal, 2)
+            - round($gastosAdicionales, 2);
 
         $desgloseExplicativo = [
             'Horas previstas: Suma de la duración programada de todas las asignaciones activas en turnos no cancelados.',

@@ -859,4 +859,29 @@ class EconomicCalculationTest extends TestCase
         $this->assertEquals(500, $informeB['resultado_estimado']);
         $this->assertEquals(1587.50, $informeGlobal['resultado_estimado']);
     }
+    public function test_resultado_economico_respeta_redondeo_monetario(): void
+    {
+        // Tarifa que genera un coste con tres decimales:
+        // 3,75 h × 14,50 € = 54,375 €.
+        TarifaCoste::where('empleado_id', $this->empleado->id)
+            ->update(['coste_hora' => 14.50]);
+
+        RegistroHora::query()
+            ->update(['horas_computables' => 3.75]);
+
+        // El setUp ya contiene 1.000 € de ingresos
+        // y 100 € de gastos adicionales.
+        $informe = $this->econService->calcularInformeProyecto(
+            $this->proyecto,
+            '2026-06-01',
+            '2026-06-30'
+        );
+
+        $this->assertEquals(54.38, $informe['coste_personal_real']);
+        $this->assertEquals(1000, $informe['ingresos_totales']);
+        $this->assertEquals(100, $informe['gastos_adicionales']);
+
+        // 1.000 - 54,38 - 100 = 845,62 €.
+        $this->assertEquals(845.62, $informe['resultado_estimado']);
+    }
 }
