@@ -13,6 +13,14 @@ use App\Services\ShiftGenerationService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+use App\Models\Asignacion;
+use App\Models\Contrato;
+use App\Models\Empleado;
+use App\Models\Role;
+use App\Models\User;
+use App\Services\AutomaticScheduleService;
+use App\Livewire\Roster\ShiftManager;
+use Livewire\Livewire;
 
 class ShiftGenerationTest extends TestCase
 {
@@ -318,5 +326,98 @@ class ShiftGenerationTest extends TestCase
             'id' => $turno->id,
             'estado' => Turno::ESTADO_BORRADOR,
         ]);
+    }
+    public function test_flujo_integral_generacion_publicacion_y_asignacion(): void
+    {
+        $proyecto = $this->necesidad->proyecto;
+        $categoria = $this->necesidad->categoria;
+        $instalacionId = $this->necesidad->instalacion_id;
+
+        // Un empleado para cinco turnos de dos plazas.
+        $empleado = Empleado::create([
+            'nombre' => 'Juan',
+            'apellidos' => 'Pérez',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $empleado->categoriasHabilitadas()->sync([$categoria->id]);
+
+        Contrato::create([
+            'empleado_id' => $empleado->id,
+            'tipo_contrato' => 'Indefinido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+            'jornada_semanal_horas' => 40,
+        ]);
+
+        // 1. Generar turnos desde la necesidad.
+        $resultado = app(ShiftGenerationService::class)->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $this->assertEquals(5, $resultado['generados']);
+
+        $this->assertSame(
+            5,
+            Turno::where('proyecto_id', $proyecto->id)
+                ->where('estado', Turno::ESTADO_BORRADOR)
+                ->count()
+        );
+
+        // 2. Publicar los borradores.
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::factory()->create();
+        $planner->roles()->attach($rol->id);
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('proyectoFiltro', $proyecto->id)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('publicarBorradores')
+            ->assertHasNoErrors();
+
+        $this->assertSame(
+            5,
+            Turno::where('proyecto_id', $proyecto->id)
+                ->where('estado', Turno::ESTADO_PUBLICADO)
+                ->count()
+        );
+
+        // 3. Ejecutar asignación automática.
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-01',
+            '2026-06-07',
+            $instalacionId
+        );
+
+        // 4. Comprobar asignaciones y vacantes.
+        $turnos = Turno::where('proyecto_id', $proyecto->id)->get();
+
+        $this->assertCount(5, $turnos);
+        $this->assertSame(5, Asignacion::count());
+
+        foreach ($turnos as $turno) {
+            $this->assertSame(1, $turno->plazasAsignadas());
+            $this->assertSame(1, $turno->plazasDisponibles());
+        }
+
+        // Una segunda ejecución no debe duplicar asignaciones.
+        app(AutomaticScheduleService::class)->generar(
+            $proyecto,
+            '2026-06-01',
+            '2026-06-07',
+            $instalacionId
+        );
+
+        $this->assertSame(5, Asignacion::count());
     }
 }
