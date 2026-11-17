@@ -848,5 +848,15 @@ class EconomicCalculationTest extends TestCase
             800,
             $informeA['ingresos_totales'] + $informeB['ingresos_totales']
         );
+
+        // Los costes reales pertenecen a la instalación del turno.
+        $this->assertEquals(112.50, $informeA['coste_personal_real']);
+        $this->assertEquals(0, $informeB['coste_personal_real']);
+        $this->assertEquals(112.50, $informeGlobal['coste_personal_real']);
+
+        // Resultado = ingresos - coste real - gastos adicionales.
+        $this->assertEquals(187.50, $informeA['resultado_estimado']);
+        $this->assertEquals(500, $informeB['resultado_estimado']);
+        $this->assertEquals(1587.50, $informeGlobal['resultado_estimado']);
     }
 }
