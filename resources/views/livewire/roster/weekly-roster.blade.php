@@ -283,7 +283,25 @@
                             {{ $t->plazasAsignadas() }}/{{ $t->plazas_necesarias }}
                         </span>
                     </div>
-
+                    {{-- Estado de publicación, independiente de la cobertura --}}
+                    <div class="flex items-center gap-1.5">
+                        @if($t->estado === \App\Models\Turno::ESTADO_PUBLICADO)
+                        <span data-testid="estado-turno-{{ $t->id }}-publicado"
+                            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                            Publicado
+                        </span>
+                        @elseif($t->estado === \App\Models\Turno::ESTADO_BORRADOR)
+                        <span data-testid="estado-turno-{{ $t->id }}-borrador"
+                            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-semibold bg-slate-700/50 text-slate-300 border border-slate-600/40">
+                            Borrador
+                        </span>
+                        @else
+                        <span data-testid="estado-turno-{{ $t->id }}-cancelado"
+                            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-semibold bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                            Cancelado
+                        </span>
+                        @endif
+                    </div>
                     <div>
                         <span class="text-[11px] font-medium text-slate-200 block truncate">
                             {{ $t->instalacion->nombre }}
@@ -363,6 +381,16 @@
                         <span class="block text-[10px] text-slate-400">
                             {{ $t->categoria->nombre }}
                             · {{ $t->plazasAsignadas() }}/{{ $t->plazas_necesarias }}
+                            <span data-testid="estado-mensual-turno-{{ $t->id }}-{{ $t->estado }}" class="inline-block mt-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold
+        @if($t->estado === \App\Models\Turno::ESTADO_PUBLICADO)
+            bg-emerald-500/10 text-emerald-300 border border-emerald-500/20
+        @elseif($t->estado === \App\Models\Turno::ESTADO_BORRADOR)
+            bg-slate-700/50 text-slate-300 border border-slate-600/40
+        @else
+            bg-rose-500/10 text-rose-300 border border-rose-500/20
+        @endif">
+                                {{ ucfirst($t->estado) }}
+                            </span>
                         </span>
                     </button>
                     @endforeach
@@ -431,6 +459,25 @@
                         {{ ucfirst(str_replace('_', ' ', $turnoSeleccionado->estadoCobertura())) }}
                     </span>
                 </div>
+            </div>
+
+            {{-- Estado de publicación del turno --}}
+            <div class="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800">
+                <span class="text-[11px] text-slate-400">
+                    Estado de publicación
+                </span>
+
+                <span data-testid="estado-modal-turno-{{ $turnoSeleccionado->id }}-{{ $turnoSeleccionado->estado }}"
+                    class="px-2 py-1 rounded-lg text-[10px] font-semibold
+            @if($turnoSeleccionado->estado === \App\Models\Turno::ESTADO_PUBLICADO)
+                bg-emerald-500/10 text-emerald-300 border border-emerald-500/20
+            @elseif($turnoSeleccionado->estado === \App\Models\Turno::ESTADO_BORRADOR)
+                bg-slate-700/50 text-slate-300 border border-slate-600/40
+            @else
+                bg-rose-500/10 text-rose-300 border border-rose-500/20
+            @endif">
+                    {{ ucfirst($turnoSeleccionado->estado) }}
+                </span>
             </div>
 
             <!-- Empleados Actualmente Asignados -->

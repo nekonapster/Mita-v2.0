@@ -1088,4 +1088,184 @@ class WeeklyRosterGenerationTest extends TestCase
             'estado' => Asignacion::ESTADO_CONFIRMADO,
         ]);
     }
+
+    public function test_cuadrante_semanal_muestra_estado_publicacion_de_cada_turno(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-17 12:00:00'));
+
+        $admin = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+
+        $admin->roles()->attach($rol->id);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Publicación Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación Publicación Test',
+        ]);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Publicación Test',
+            'fecha_inicio' => '2026-06-01',
+        ]);
+
+        $datosTurno = [
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-17',
+            'plazas_necesarias' => 1,
+        ];
+
+        $borrador = Turno::create(array_merge($datosTurno, [
+            'hora_inicio' => '2026-06-17 10:00:00',
+            'hora_fin' => '2026-06-17 14:00:00',
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]));
+
+        $publicado = Turno::create(array_merge($datosTurno, [
+            'hora_inicio' => '2026-06-17 15:00:00',
+            'hora_fin' => '2026-06-17 19:00:00',
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]));
+
+        Livewire::actingAs($admin)
+            ->test(WeeklyRoster::class)
+            ->set('currentDate', '2026-06-17')
+            ->set('viewMode', 'weekly')
+            ->assertSeeHtml('data-testid="estado-turno-' . $borrador->id . '-borrador"')
+            ->assertSeeHtml('data-testid="estado-turno-' . $publicado->id . '-publicado"');
+    }
+    public function test_modal_turno_muestra_estado_de_publicacion(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-17 12:00:00'));
+
+        $admin = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+
+        $admin->roles()->attach($rol->id);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Modal Estado',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Modal Estado',
+        ]);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Modal Estado',
+            'fecha_inicio' => '2026-06-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-17',
+            'hora_inicio' => '2026-06-17 10:00:00',
+            'hora_fin' => '2026-06-17 14:00:00',
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(WeeklyRoster::class)
+            ->set('currentDate', '2026-06-17')
+            ->call('abrirModalTurno', $turno->id)
+            ->assertSet('modalTurnoOpen', true)
+            ->assertSeeHtml('data-testid="estado-modal-turno-' . $turno->id . '-borrador"');
+    }
+
+    public function test_vista_mensual_muestra_estado_de_publicacion(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-17 12:00:00'));
+
+        $admin = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+
+        $admin->roles()->attach($rol->id);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Mensual',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Piscina Mensual',
+        ]);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Mensual',
+            'fecha_inicio' => '2026-06-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-17',
+            'hora_inicio' => '2026-06-17 10:00:00',
+            'hora_fin' => '2026-06-17 14:00:00',
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(WeeklyRoster::class)
+            ->set('currentDate', '2026-06-17')
+            ->set('viewMode', 'monthly')
+            ->assertSeeHtml(
+                'data-testid="estado-mensual-turno-' . $turno->id . '-borrador"'
+            );
+    }
 }
