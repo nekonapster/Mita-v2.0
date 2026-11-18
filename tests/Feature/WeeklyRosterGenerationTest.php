@@ -1268,4 +1268,205 @@ class WeeklyRosterGenerationTest extends TestCase
                 'data-testid="estado-mensual-turno-' . $turno->id . '-borrador"'
             );
     }
+    public function test_empleado_no_puede_abrir_modal_administrativo_de_turno(): void
+    {
+        $empleado = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $empleado->roles()->attach($rol->id);
+
+        $this->actingAs($empleado);
+
+        Livewire::test(WeeklyRoster::class)
+            ->call('abrirModalTurno', 999999)
+            ->assertForbidden();
+    }
+    public function test_empleado_no_ve_controles_de_asignacion_en_cuadrante_semanal(): void
+    {
+        $empleado = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $empleado->roles()->attach($rol->id);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación Test',
+            'activo' => true,
+        ]);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 12:00'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        $this->actingAs($empleado);
+
+        Livewire::test(WeeklyRoster::class)
+            ->set('viewMode', 'weekly')
+            ->set('currentDate', '2026-06-15')
+            ->assertSee('Instalación Test')
+            ->assertSee('Sin cubrir')
+            ->assertDontSee('Click para asignar')
+            ->assertDontSeeHtml(
+                'wire:click="abrirModalTurno(' . $turno->id . ')"'
+            );
+    }
+    public function test_empleado_no_ve_controles_de_asignacion_en_cuadrante_mensual(): void
+    {
+        $empleado = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $empleado->roles()->attach($rol->id);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación Test Mensual',
+            'activo' => true,
+        ]);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $turno = Turno::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 12:00'),
+            'plazas_necesarias' => 1,
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]);
+
+        $this->actingAs($empleado);
+
+        Livewire::test(WeeklyRoster::class)
+            ->set('viewMode', 'monthly')
+            ->set('currentDate', '2026-06-15')
+            ->assertSee('Publicado')
+            ->assertDontSeeHtml(
+                'wire:click="abrirModalTurno(' . $turno->id . ')"'
+            );
+    }
+    public function test_empleado_solo_ve_turnos_publicados_en_cuadrante(): void
+    {
+        $usuario = User::factory()->create();
+
+        $rol = Role::firstOrCreate(
+            ['name' => Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario->roles()->attach($rol->id);
+
+        $cliente = Cliente::create([
+            'razon_social' => 'Cliente Test',
+        ]);
+
+        $instalacion = Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación Test',
+            'activo' => true,
+        ]);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $actividad = Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto Test',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        $datosBase = [
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha' => '2026-06-15',
+            'plazas_necesarias' => 1,
+        ];
+
+        Turno::create(array_merge($datosBase, [
+            'hora_inicio' => Carbon::parse('2026-06-15 08:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 12:00'),
+            'estado' => Turno::ESTADO_PUBLICADO,
+        ]));
+
+        Turno::create(array_merge($datosBase, [
+            'hora_inicio' => Carbon::parse('2026-06-15 16:00'),
+            'hora_fin' => Carbon::parse('2026-06-15 20:00'),
+            'estado' => Turno::ESTADO_BORRADOR,
+        ]));
+
+        $this->actingAs($usuario);
+
+        Livewire::test(WeeklyRoster::class)
+            ->set('viewMode', 'weekly')
+            ->set('currentDate', '2026-06-15')
+            ->assertSee('08:00-12:00')
+            ->assertDontSee('16:00-20:00')
+            ->assertDontSee('Borrador');
+    }
 }

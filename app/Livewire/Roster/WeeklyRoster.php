@@ -79,6 +79,18 @@ class WeeklyRoster extends Component
 
     public function abrirModalTurno(int $turnoId): void
     {
+        $usuario = auth()->user();
+
+        abort_unless(
+            $usuario &&
+                (
+                    $usuario->isAdmin() ||
+                    $usuario->hasRole('planner')
+                ),
+            403,
+            'No tienes permisos para gestionar turnos.'
+        );
+
         $this->turnoSeleccionado = Turno::with([
             'instalacion.cliente',
             'proyecto',
@@ -529,6 +541,39 @@ class WeeklyRoster extends Component
             'categoria_id' => $this->categoriaId,
             'estado_cobertura' => $this->estadoCobertura,
         ]);
+
+        // Los empleados solo pueden consultar turnos publicados.
+        // Administradores y planificadores conservan la vista completa.
+        $usuario = auth()->user();
+
+        $puedeGestionarTurnos = $usuario && (
+            $usuario->isAdmin() ||
+            $usuario->hasRole('planner')
+        );
+
+        if (! $puedeGestionarTurnos) {
+            $datosCuadrante['turnos'] = $datosCuadrante['turnos']
+                ->filter(fn($turno) => $turno->estado === Turno::ESTADO_PUBLICADO)
+                ->values();
+
+            $turnosVisibles = $datosCuadrante['turnos'];
+
+            $datosCuadrante['estadisticas'] = [
+                'total' => $turnosVisibles->count(),
+                'cubiertos' => $turnosVisibles->filter(
+                    fn($t) => $t->estadoCobertura() === 'cubierto'
+                )->count(),
+                'parciales' => $turnosVisibles->filter(
+                    fn($t) => $t->estadoCobertura() === 'parcialmente_cubierto'
+                )->count(),
+                'sin_cubrir' => $turnosVisibles->filter(
+                    fn($t) => $t->estadoCobertura() === 'sin_cubrir'
+                )->count(),
+                'conflictos' => $turnosVisibles->filter(
+                    fn($t) => $t->estadoCobertura() === 'con_conflicto'
+                )->count(),
+            ];
+        }
 
         $turnosPorFecha = $datosCuadrante['turnos']->groupBy(function ($t) {
             return $t->fecha->toDateString();

@@ -267,8 +267,13 @@
                 default => 'border-slate-800 bg-slate-950/40',
                 };
                 @endphp
-                <div wire:click="abrirModalTurno({{ $t->id }})"
-                    class="p-2.5 rounded-xl border {{ $bordeColor }} hover:border-cyan-400 cursor-pointer transition shadow text-xs space-y-1.5 group">
+                <div @if(auth()->user()?->isAdmin() || auth()->user()?->hasRole('planner'))
+                    wire:click="abrirModalTurno({{ $t->id }})"
+                    @endif
+                    class="p-2.5 rounded-xl border {{ $bordeColor }} transition shadow text-xs space-y-1.5 group
+                    {{ auth()->user()?->isAdmin() || auth()->user()?->hasRole('planner')
+                    ? 'hover:border-cyan-400 cursor-pointer'
+                    : 'cursor-default' }}">
 
                     <div class="flex items-center justify-between text-[11px]">
                         <span class="font-bold text-white group-hover:text-cyan-300 transition">
@@ -325,7 +330,10 @@
                         </div>
                         @empty
                         <span class="text-[10px] text-rose-400 italic block font-semibold">
-                            Sin cubrir (Click para asignar)
+                            Sin cubrir
+                            @if(auth()->user()?->isAdmin() || auth()->user()?->hasRole('planner'))
+                            (Click para asignar)
+                            @endif
                         </span>
                         @endforelse
                     </div>
@@ -371,7 +379,9 @@
                 <!-- Turnos seleccionables desde la vista mensual -->
                 <div class="mt-2 pt-2 border-t border-slate-700 space-y-1">
                     @foreach($turnosDia as $t)
-                    <button type="button" wire:click="abrirModalTurno({{ $t->id }})"
+                    @if(auth()->user()?->isAdmin() || auth()->user()?->hasRole('planner'))
+                    <button type="button" wire:click="abrirModalTurno({{ $t->id }})" @else <button type="button"
+                        disabled @endif
                         class="block w-full text-left px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-cyan-900/50 hover:text-cyan-300 text-slate-200 transition"
                         title="Abrir turno para consultar o modificar asignaciones">
                         <span class="block font-semibold">
