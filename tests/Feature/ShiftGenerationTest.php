@@ -178,6 +178,9 @@ class ShiftGenerationTest extends TestCase
             ->assertSet('fechaDesde', '2026-06-01')
             ->set('fechaHasta', '2026-06-07')
             ->assertSet('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->assertSet('modalPublicacionOpen', true)
+            ->set('proyectosSeleccionados', [$this->necesidad->proyecto_id])
             ->call('publicarBorradores')
             ->assertStatus(200)
             ->assertSet(
@@ -381,6 +384,9 @@ class ShiftGenerationTest extends TestCase
             ->set('proyectoFiltro', $proyecto->id)
             ->set('fechaDesde', '2026-06-01')
             ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->assertSet('modalPublicacionOpen', true)
+            ->set('proyectosSeleccionados', [$proyecto->id])
             ->call('publicarBorradores')
             ->assertHasNoErrors();
 
@@ -419,5 +425,391 @@ class ShiftGenerationTest extends TestCase
         );
 
         $this->assertSame(5, Asignacion::count());
+    }
+
+    public function test_abrir_publicacion_no_publica_turnos_sin_confirmacion(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Modal',
+            'email' => 'planner_modal@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->assertSet('modalPublicacionOpen', true);
+
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+    }
+    public function test_modal_publicacion_muestra_solo_proyectos_con_borradores_del_periodo(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Proyectos',
+            'email' => 'planner_proyectos@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        // Proyecto principal: 5 turnos en borrador.
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $proyectoPrincipalId = $this->necesidad->proyecto_id;
+
+        // Otro proyecto, sin turnos pendientes.
+        $proyectoSinBorradores = Proyecto::create([
+            'cliente_id' => $this->necesidad->proyecto->cliente_id,
+            'nombre' => 'Proyecto Sin Borradores',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->assertViewHas('proyectosPendientesPublicacion', function ($proyectos) use (
+                $proyectoPrincipalId,
+                $proyectoSinBorradores
+            ) {
+                return $proyectos->count() === 1
+                    && $proyectos->first()->id === $proyectoPrincipalId
+                    && (int) $proyectos->first()->turnos_pendientes_count === 5
+                    && ! $proyectos->contains('id', $proyectoSinBorradores->id);
+            });
+    }
+    public function test_publicacion_directa_sin_seleccion_no_modifica_turnos(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Sin Selección',
+            'email' => 'planner_sin_seleccion@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('publicarBorradores');
+
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+
+        $this->assertSame(
+            0,
+            Turno::where('estado', Turno::ESTADO_PUBLICADO)->count()
+        );
+    }
+
+    public function test_publicacion_selectiva_solo_publica_proyectos_seleccionados(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Selectivo',
+            'email' => 'planner_selectivo@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        // Generar cinco turnos en borrador.
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $proyectoA = $this->necesidad->proyecto;
+
+        $proyectoB = Proyecto::create([
+            'cliente_id' => $proyectoA->cliente_id,
+            'nombre' => 'Proyecto B',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        // Tres turnos pertenecen al proyecto A y dos al B.
+        Turno::query()
+            ->orderBy('id')
+            ->limit(2)
+            ->get()
+            ->each(fn($turno) => $turno->update([
+                'proyecto_id' => $proyectoB->id,
+            ]));
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->set('proyectosSeleccionados', [$proyectoA->id])
+            ->call('publicarBorradores');
+
+        // Solo se publican los tres turnos del proyecto A.
+        $this->assertSame(
+            3,
+            Turno::where('proyecto_id', $proyectoA->id)
+                ->where('estado', Turno::ESTADO_PUBLICADO)
+                ->count()
+        );
+
+        // Los dos turnos del proyecto B siguen en borrador.
+        $this->assertSame(
+            2,
+            Turno::where('proyecto_id', $proyectoB->id)
+                ->where('estado', Turno::ESTADO_BORRADOR)
+                ->count()
+        );
+    }
+
+    public function test_modal_publicacion_muestra_checkbox_y_cantidad_de_turnos(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Vista',
+            'email' => 'planner_vista@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->assertSet('modalPublicacionOpen', true)
+            ->assertSet('proyectosSeleccionados', [])
+            ->assertSee('Seleccionar proyectos para publicar')
+            ->assertSee('Proyecto Test')
+            ->assertSee('5 turnos pendientes')
+            ->assertSeeHtml('wire:model="proyectosSeleccionados"');
+
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+    }
+    public function test_publicacion_rechaza_periodo_modificado_despues_de_abrir_modal(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Seguridad',
+            'email' => 'planner_seguridad_periodo@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->set('proyectosSeleccionados', [
+                $this->necesidad->proyecto_id,
+            ])
+            // Simular una modificación del período
+            // después de abrir el modal.
+            ->set('fechaDesde', '2026-06-03')
+            ->call('publicarBorradores');
+
+        // No debe publicarse ningún turno si cambia el período.
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+
+        $this->assertSame(
+            0,
+            Turno::where('estado', Turno::ESTADO_PUBLICADO)->count()
+        );
+    }
+
+    public function test_no_se_puede_manipular_periodo_publicacion_desde_livewire(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Seguridad',
+            'email' => 'planner_locked@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        $this->expectException(
+            \Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class
+        );
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->set('fechaDesdePublicacion', '2026-07-01');
+    }
+    public function test_publicacion_rechaza_cambio_de_filtro_proyecto(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Filtro',
+            'email' => 'planner_filtro@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $proyectoId = $this->necesidad->proyecto_id;
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->set('proyectoFiltro', $proyectoId)
+            ->call('abrirModalPublicacion')
+            ->set('proyectosSeleccionados', [$proyectoId])
+            ->set('proyectoFiltro', null)
+            ->call('publicarBorradores');
+
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+
+        $this->assertSame(
+            0,
+            Turno::where('estado', Turno::ESTADO_PUBLICADO)->count()
+        );
+    }
+
+    public function test_publicacion_rechaza_proyecto_no_disponible(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
+
+        $planner = User::create([
+            'name' => 'Planificador Seleccion',
+            'email' => 'planner_seleccion_segura@test.es',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $planner->roles()->attach($rol->id);
+
+        (new ShiftGenerationService())->generarTurnos(
+            $this->necesidad,
+            '2026-06-01',
+            '2026-06-07'
+        );
+
+        $proyectoDisponibleId = $this->necesidad->proyecto_id;
+
+        $proyectoNoDisponible = Proyecto::create([
+            'cliente_id' => $this->necesidad->proyecto->cliente_id,
+            'nombre' => 'Proyecto No Disponible',
+            'fecha_inicio' => '2026-01-01',
+        ]);
+
+        Livewire::actingAs($planner)
+            ->test(ShiftManager::class)
+            ->set('fechaDesde', '2026-06-01')
+            ->set('fechaHasta', '2026-06-07')
+            ->call('abrirModalPublicacion')
+            ->set('proyectosSeleccionados', [
+                $proyectoDisponibleId,
+                $proyectoNoDisponible->id,
+            ])
+            ->call('publicarBorradores');
+
+        $this->assertSame(
+            5,
+            Turno::where('estado', Turno::ESTADO_BORRADOR)->count()
+        );
+
+        $this->assertSame(
+            0,
+            Turno::where('estado', Turno::ESTADO_PUBLICADO)->count()
+        );
     }
 }

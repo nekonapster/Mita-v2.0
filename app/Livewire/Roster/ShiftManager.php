@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\Gate;
+use Livewire\Attributes\Locked;
 
 class ShiftManager extends Component
 {
@@ -31,19 +32,95 @@ class ShiftManager extends Component
     public ?string $turnoToDeleteInfo = null;
     public bool $turnoTieneAsignaciones = false;
 
+
+    public bool $modalPublicacionOpen = false;
+    #[Locked]
+    public ?string $fechaDesdePublicacion = null;
+    #[Locked]
+    public ?string $fechaHastaPublicacion = null;
+    #[Locked]
+    public ?int $proyectoFiltroPublicacion = null;
+
+    public array $proyectosSeleccionados = [];
+
+    public function abrirModalPublicacion(): void
+    {
+        Gate::authorize('publish', Turno::class);
+
+        $this->proyectosSeleccionados = [];
+        $this->modalPublicacionOpen = true;
+        $this->fechaDesdePublicacion = $this->fechaDesde;
+        $this->fechaHastaPublicacion = $this->fechaHasta;
+        $this->proyectoFiltroPublicacion = $this->proyectoFiltro;
+    }
+
     public function publicarBorradores(): void
     {
         Gate::authorize('publish', Turno::class);
 
-        $turnos = Turno::where('estado', Turno::ESTADO_BORRADOR)
+        if ($this->proyectoFiltro !== $this->proyectoFiltroPublicacion) {
+            $this->feedbackMessage = null;
+            $this->feedbackError = 'El proyecto filtrado ha cambiado. Cerrá y volvé a abrir el modal de publicación.';
+            return;
+        }
+
+        $this->feedbackMessage = null;
+        $this->feedbackError = null;
+
+
+        if (! $this->modalPublicacionOpen || empty($this->proyectosSeleccionados)) {
+            $this->feedbackError = 'Debes seleccionar al menos un proyecto.';
+            return;
+        }
+
+        if (
+            $this->fechaDesde !== $this->fechaDesdePublicacion ||
+            $this->fechaHasta !== $this->fechaHastaPublicacion
+        ) {
+            $this->feedbackMessage = null;
+            $this->feedbackError = 'El período ha cambiado. Cerrá y volvé a abrir el modal de publicación.';
+            return;
+        }
+
+        $proyectosSeleccionados = array_values(array_unique(
+            array_map('intval', $this->proyectosSeleccionados)
+        ));
+
+        // Comprobar que todos los proyectos seleccionados tengan
+        // turnos en borrador dentro del período y filtros actuales.
+        $proyectosPermitidos = Turno::query()
+            ->where('estado', Turno::ESTADO_BORRADOR)
             ->whereBetween('fecha', [$this->fechaDesde, $this->fechaHasta])
-            ->when($this->proyectoFiltro, fn($q) => $q->where('proyecto_id', $this->proyectoFiltro))
+            ->when(
+                $this->proyectoFiltro,
+                fn($q) => $q->where('proyecto_id', $this->proyectoFiltro)
+            )
+            ->whereIn('proyecto_id', $proyectosSeleccionados)
+            ->distinct()
+            ->pluck('proyecto_id')
+            ->map(fn($id) => (int) $id)
+            ->all();
+
+        if (count($proyectosPermitidos) !== count($proyectosSeleccionados)) {
+            $this->feedbackError = 'La selección contiene proyectos sin turnos pendientes en el período.';
+            return;
+        }
+
+        $publicados = Turno::query()
+            ->where('estado', Turno::ESTADO_BORRADOR)
+            ->whereBetween('fecha', [$this->fechaDesde, $this->fechaHasta])
+            ->whereIn('proyecto_id', $proyectosSeleccionados)
+            ->when(
+                $this->proyectoFiltro,
+                fn($q) => $q->where('proyecto_id', $this->proyectoFiltro)
+            )
             ->update(['estado' => Turno::ESTADO_PUBLICADO]);
 
-        $this->feedbackMessage = "Se han publicado {$turnos} turnos en el cuadrante.";
-        $this->feedbackError = null;
-    }
+        $this->modalPublicacionOpen = false;
+        $this->proyectosSeleccionados = [];
 
+        $this->feedbackMessage = "Se han publicado {$publicados} turnos en el cuadrante.";
+    }
 
     public function cambiarEstado(int $id, string $nuevoEstado): void
     {
@@ -179,6 +256,29 @@ class ShiftManager extends Component
         return view('livewire.roster.shift-manager', [
             'turnos' => $query->paginate(15),
             'proyectos' => Proyecto::orderBy('nombre')->get(),
+            'proyectosPendientesPublicacion' => Proyecto::query()
+                ->whereHas('turnos', function ($query) {
+                    $query->where('estado', Turno::ESTADO_BORRADOR)
+                        ->whereBetween('fecha', [
+                            $this->fechaDesde,
+                            $this->fechaHasta,
+                        ])
+                        ->when(
+                            $this->proyectoFiltro,
+                            fn($q) => $q->where('proyecto_id', $this->proyectoFiltro)
+                        );
+                })
+                ->withCount([
+                    'turnos as turnos_pendientes_count' => function ($query) {
+                        $query->where('estado', Turno::ESTADO_BORRADOR)
+                            ->whereBetween('fecha', [
+                                $this->fechaDesde,
+                                $this->fechaHasta,
+                            ]);
+                    },
+                ])
+                ->orderBy('nombre')
+                ->get(),
         ])->layout('layouts.app', ['title' => 'Gestión de Turnos']);
     }
 }
