@@ -55,6 +55,14 @@ class EmployeePortal extends Component
             'Solo se pueden imputar horas de turnos publicados y asignaciones vigentes.'
         );
 
+        // Impedir abrir la imputación antes de finalizar el turno.
+        abort_if(
+            Carbon::parse($asig->turno->hora_fin, 'Europe/Madrid')
+                ->greaterThan(Carbon::now('Europe/Madrid')),
+            403,
+            'No se pueden imputar horas antes de finalizar el turno.'
+        );
+
 
         $this->asignacionSeleccionadaId = $asig->id;
         $this->turnoParaImputar = $asig->turno;

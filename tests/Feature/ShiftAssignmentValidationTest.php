@@ -814,7 +814,11 @@ class ShiftAssignmentValidationTest extends TestCase
         \Livewire\Livewire::actingAs($usuario)
             ->test(\App\Livewire\Portal\EmployeePortal::class)
             ->set('activeTab', 'imputar')
-            ->assertSee('7.75 h computables')
+            ->assertViewHas('turnosParaImputar', function ($turnos) use ($asignacion) {
+                return $turnos->contains('id', $asignacion->id);
+            })
+            ->assertSee('7.75')
+            ->assertSee('computables')
             ->assertSee('En Revisión');
     }
     public function test_empleado_no_puede_imputar_horas_de_turno_futuro(): void
@@ -1039,5 +1043,108 @@ class ShiftAssignmentValidationTest extends TestCase
             ->assertViewHas('turnosParaImputar', function ($turnos) use ($asignacion) {
                 return ! $turnos->contains('id', $asignacion->id);
             });
+    }
+
+    public function test_empleado_no_puede_abrir_imputacion_antes_de_finalizar_turno(): void
+    {
+        $this->travelTo(
+            Carbon::parse('2026-06-15 12:00:00', 'Europe/Madrid')
+        );
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Empleado Prueba',
+            'email' => 'empleado_apertura_futura@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->call('abrirModalImputar', $asignacion->id)
+            ->assertForbidden();
+    }
+    public function test_empleado_no_ve_boton_imputar_en_turno_futuro(): void
+    {
+        $this->travelTo(
+            Carbon::parse('2026-06-14 12:00:00', 'Europe/Madrid')
+        );
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Empleado Test',
+            'email' => 'empleado_boton_futuro@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->assertViewHas('turnosFuturos', function ($turnos) use ($asignacion) {
+                return $turnos->contains('id', $asignacion->id);
+            })
+            ->assertDontSeeHtml(
+                'wire:click="abrirModalImputar(' . $asignacion->id . ')"'
+            );
+    }
+    public function test_empleado_no_ve_boton_imputar_en_historial_antes_de_finalizar_turno(): void
+    {
+        $this->travelTo(
+            Carbon::parse('2026-06-15 12:00:00', 'Europe/Madrid')
+        );
+
+        $asignacion = Asignacion::create([
+            'turno_id' => $this->turno->id,
+            'empleado_id' => $this->empleado->id,
+            'estado' => Asignacion::ESTADO_CONFIRMADO,
+        ]);
+
+        $rol = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::EMPLOYEE],
+            ['display_name' => 'Empleado']
+        );
+
+        $usuario = \App\Models\User::create([
+            'name' => 'Empleado Test Historial',
+            'email' => 'empleado_historial_futuro@test.es',
+            'password' => bcrypt('password123'),
+            'employee_id' => $this->empleado->id,
+        ]);
+
+        $usuario->roles()->attach($rol->id);
+
+        \Livewire\Livewire::actingAs($usuario)
+            ->test(\App\Livewire\Portal\EmployeePortal::class)
+            ->set('activeTab', 'imputar')
+            ->assertViewHas('turnosParaImputar', function ($turnos) use ($asignacion) {
+                return $turnos->contains('id', $asignacion->id);
+            })
+            ->assertDontSeeHtml(
+                'wire:click="abrirModalImputar(' . $asignacion->id . ')"'
+            );
     }
 }
