@@ -35,8 +35,33 @@ class ClientIndex extends Component
     public string $instalacion_telefono = '';
     public string $instalacion_observaciones = '';
 
+    public function mount(): void
+    {
+        abort_unless(
+            auth()->user()?->hasRole([
+                'superadmin',
+                'admin',
+                'rrhh',
+                'planner',
+                'accountant',
+            ]),
+            403
+        );
+    }
+
+    private function autorizarGestion(): void
+    {
+        abort_unless(
+            auth()->user()?->isAdmin()
+                || auth()->user()?->hasRole('planner'),
+            403
+        );
+    }
+
     public function abrirModalCliente(?int $id = null): void
     {
+        $this->autorizarGestion();
+
         $this->reset(['clienteId', 'razon_social', 'nif_cif', 'persona_contacto', 'email', 'telefono', 'direccion', 'observaciones']);
         $this->activo = true;
 
@@ -58,6 +83,8 @@ class ClientIndex extends Component
 
     public function guardarCliente(): void
     {
+        $this->autorizarGestion();
+
         $this->validate([
             'razon_social' => 'required|string|max:150',
             'nif_cif' => 'nullable|string|max:30',
@@ -89,6 +116,8 @@ class ClientIndex extends Component
 
     public function abrirModalInstalacion(int $clienteId): void
     {
+        $this->autorizarGestion();
+
         $this->reset(['instalacion_nombre', 'instalacion_direccion', 'instalacion_contacto', 'instalacion_telefono', 'instalacion_observaciones']);
         $this->instalacionClienteId = $clienteId;
         $this->modalInstalacionOpen = true;
@@ -96,6 +125,8 @@ class ClientIndex extends Component
 
     public function guardarInstalacion(): void
     {
+        $this->autorizarGestion();
+
         $this->validate([
             'instalacion_nombre' => 'required|string|max:150',
             'instalacion_direccion' => 'nullable|string|max:300',
@@ -133,6 +164,8 @@ class ClientIndex extends Component
 
     public function confirmarEliminarCliente(int $id): void
     {
+        $this->autorizarGestion();
+
         $c = Cliente::withCount(['instalaciones', 'proyectos'])->findOrFail($id);
         $this->clienteToDeleteId = $c->id;
         $this->clienteToDeleteNombre = $c->razon_social;
@@ -144,13 +177,16 @@ class ClientIndex extends Component
 
     public function eliminarCliente(): void
     {
+
+        $this->autorizarGestion();
+
         if (! $this->clienteToDeleteId) {
             return;
         }
 
         try {
             $cliente = Cliente::withCount(['instalaciones', 'proyectos'])->findOrFail($this->clienteToDeleteId);
-            if ($this->clienteTieneRegistros) {
+            if ($cliente->instalaciones_count > 0 || $cliente->proyectos_count > 0) {
                 $cliente->update(['activo' => false]);
                 $this->feedbackMessage = "El cliente {$cliente->razon_social} cuenta con instalaciones o proyectos vinculados; ha sido desactivado para proteger el historial.";
             } else {
@@ -171,6 +207,8 @@ class ClientIndex extends Component
 
     public function confirmarEliminarInstalacion(int $id): void
     {
+        $this->autorizarGestion();
+
         $inst = Instalacion::withCount(['turnos', 'necesidadesServicio'])->findOrFail($id);
         $this->instalacionToDeleteId = $inst->id;
         $this->instalacionToDeleteNombre = $inst->nombre;
@@ -182,13 +220,15 @@ class ClientIndex extends Component
 
     public function eliminarInstalacion(): void
     {
+        $this->autorizarGestion();
+
         if (! $this->instalacionToDeleteId) {
             return;
         }
 
         try {
             $inst = Instalacion::withCount(['turnos', 'necesidadesServicio'])->findOrFail($this->instalacionToDeleteId);
-            if ($this->instalacionTieneRegistros) {
+            if ($inst->turnos_count > 0 || $inst->necesidades_servicio_count > 0) {
                 $inst->update(['activo' => false]);
                 $this->feedbackMessage = "La instalación {$inst->nombre} cuenta con turnos o necesidades; ha sido desactivada para salvaguardar la planificación.";
             } else {
@@ -217,7 +257,7 @@ class ClientIndex extends Component
                         ->orWhere('persona_contacto', 'ilike', "%{$this->search}%");
                 });
             })
-            ->when($this->estadoFiltro !== '', fn ($q) => $q->where('activo', (bool) $this->estadoFiltro))
+            ->when($this->estadoFiltro !== '', fn($q) => $q->where('activo', (bool) $this->estadoFiltro))
             ->orderBy('razon_social');
 
         return view('livewire.services.client-index', [

@@ -82,4 +82,206 @@ class AuthorizationTest extends TestCase
         $this->assertFalse(Gate::forUser($this->employeeUser)->allows('create', Turno::class));
         $this->assertFalse(Gate::forUser($this->employeeUser)->allows('create', MovimientoEconomico::class));
     }
+    public function test_empleado_no_puede_acceder_a_gestion_de_clientes(): void
+    {
+        $this->actingAs($this->employeeUser)
+            ->get(route('servicios.clientes'))
+            ->assertForbidden();
+    }
+    public function test_empleado_no_puede_crear_clientes_mediante_livewire(): void
+    {
+        $this->actingAs($this->employeeUser);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('clientes', [
+            'razon_social' => 'Cliente no autorizado',
+        ]);
+    }
+
+    public function test_contable_puede_consultar_clientes(): void
+    {
+        $this->actingAs($this->accountant)
+            ->get(route('servicios.clientes'))
+            ->assertOk();
+    }
+    public function test_contable_no_puede_crear_clientes_mediante_livewire(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->set('razon_social', 'Cliente creado por contabilidad')
+            ->call('guardarCliente')
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('clientes', [
+            'razon_social' => 'Cliente creado por contabilidad',
+        ]);
+    }
+    public function test_contable_no_puede_crear_instalaciones_mediante_livewire(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->set('instalacion_nombre', 'Instalación no autorizada')
+            ->call('guardarInstalacion')
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('instalaciones', [
+            'nombre' => 'Instalación no autorizada',
+        ]);
+    }
+
+    public function test_contable_no_puede_eliminar_clientes_mediante_livewire(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente protegido',
+            'activo' => true,
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->set('clienteToDeleteId', $cliente->id)
+            ->call('eliminarCliente')
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('clientes', [
+            'id' => $cliente->id,
+            'razon_social' => 'Cliente protegido',
+            'activo' => true,
+        ]);
+    }
+    public function test_contable_no_puede_eliminar_instalaciones_mediante_livewire(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+            'activo' => true,
+        ]);
+
+        $instalacion = \App\Models\Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación protegida',
+            'activo' => true,
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->set('instalacionToDeleteId', $instalacion->id)
+            ->call('eliminarInstalacion')
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('instalaciones', [
+            'id' => $instalacion->id,
+            'nombre' => 'Instalación protegida',
+            'activo' => true,
+        ]);
+    }
+
+    public function test_contable_no_puede_abrir_formulario_de_clientes(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->call('abrirModalCliente')
+            ->assertForbidden();
+    }
+    public function test_contable_no_puede_abrir_formulario_de_instalaciones(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->call('abrirModalInstalacion', 1)
+            ->assertForbidden();
+    }
+    public function test_no_elimina_cliente_con_instalaciones_aunque_se_manipule_livewire(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente con historial',
+            'activo' => true,
+        ]);
+
+        \App\Models\Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación histórica',
+            'activo' => true,
+        ]);
+
+        $this->actingAs($this->admin);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->set('clienteToDeleteId', $cliente->id)
+            ->set('clienteTieneRegistros', false)
+            ->call('eliminarCliente');
+
+        $this->assertDatabaseHas('clientes', [
+            'id' => $cliente->id,
+            'activo' => false,
+        ]);
+
+        $this->assertDatabaseHas('instalaciones', [
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación histórica',
+        ]);
+    }
+    public function test_no_elimina_instalacion_con_necesidades_aunque_se_manipule_livewire(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente histórico',
+        ]);
+
+        $instalacion = \App\Models\Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación histórica',
+            'activo' => true,
+        ]);
+
+        $categoria = \App\Models\Categoria::create([
+            'nombre' => 'Socorrista',
+            'codigo' => 'SOC',
+        ]);
+
+        $actividad = \App\Models\Actividad::create([
+            'nombre' => 'Socorrismo',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto histórico',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+        ]);
+
+        $necesidad = \App\Models\NecesidadServicio::create([
+            'proyecto_id' => $proyecto->id,
+            'instalacion_id' => $instalacion->id,
+            'actividad_id' => $actividad->id,
+            'categoria_id' => $categoria->id,
+            'fecha_inicio_vigencia' => '2026-06-01',
+            'fecha_fin_vigencia' => '2026-06-30',
+            'dias_semana' => [1, 2, 3, 4, 5],
+            'hora_inicio' => '10:00:00',
+            'hora_fin' => '14:00:00',
+            'plazas_necesarias' => 1,
+        ]);
+
+        $this->actingAs($this->admin);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->set('instalacionToDeleteId', $instalacion->id)
+            ->set('instalacionTieneRegistros', false)
+            ->call('eliminarInstalacion');
+
+        $this->assertDatabaseHas('instalaciones', [
+            'id' => $instalacion->id,
+            'activo' => false,
+        ]);
+
+        $this->assertDatabaseHas('necesidades_servicio', [
+            'id' => $necesidad->id,
+            'instalacion_id' => $instalacion->id,
+        ]);
+    }
 }
