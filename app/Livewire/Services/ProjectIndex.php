@@ -30,11 +30,20 @@ class ProjectIndex extends Component
 
     public function mount(): void
     {
+        \Illuminate\Support\Facades\Gate::authorize(
+            'viewAny',
+            Proyecto::class
+        );
+
         $this->fecha_inicio = now()->toDateString();
     }
 
     public function abrirModalCrear(): void
     {
+        \Illuminate\Support\Facades\Gate::authorize(
+            'create',
+            Proyecto::class
+        );
         $this->reset(['proyectoId', 'nombre', 'descripcion', 'observaciones', 'instalacionesSeleccionadas']);
         $this->cliente_id = Cliente::first()?->id;
         $this->fecha_inicio = now()->toDateString();
@@ -45,6 +54,14 @@ class ProjectIndex extends Component
 
     public function abrirModalEditar(int $id): void
     {
+        $proyecto = Proyecto::with('instalaciones')->findOrFail($id);
+
+        \Illuminate\Support\Facades\Gate::authorize(
+            'update',
+            $proyecto
+        );
+
+        $this->proyectoId = $proyecto->id;
         $proyecto = Proyecto::with('instalaciones')->findOrFail($id);
         $this->proyectoId = $proyecto->id;
         $this->cliente_id = $proyecto->cliente_id;
@@ -60,6 +77,12 @@ class ProjectIndex extends Component
 
     public function guardarProyecto(): void
     {
+        \Illuminate\Support\Facades\Gate::authorize(
+            $this->proyectoId ? 'update' : 'create',
+            $this->proyectoId
+                ? Proyecto::findOrFail($this->proyectoId)
+                : Proyecto::class
+        );
         $this->validate([
             'cliente_id' => 'required|exists:clientes,id',
             'nombre' => 'required|string|max:150',
@@ -109,6 +132,9 @@ class ProjectIndex extends Component
             'movimientosEconomicos',
             'turnos',
         ])->findOrFail($id);
+        
+        \Illuminate\Support\Facades\Gate::authorize('delete', $proy);
+
         $this->proyectoToDeleteId = $proy->id;
         $this->proyectoToDeleteNombre = $proy->nombre;
         $this->proyectoTieneRegistros =
@@ -123,8 +149,12 @@ class ProjectIndex extends Component
     public function eliminar(): void
     {
         if (! $this->proyectoToDeleteId) {
-            return;
+            abort(403);
         }
+
+        $proyecto = Proyecto::findOrFail($this->proyectoToDeleteId);
+
+        \Illuminate\Support\Facades\Gate::authorize('delete', $proyecto);
 
         try {
             $proy = Proyecto::withCount([

@@ -57,6 +57,14 @@ class ProjectDeletionTest extends TestCase
             'estado' => Turno::ESTADO_PUBLICADO,
         ]);
 
+        $admin = \App\Models\User::factory()->create();
+        $rolAdmin = \App\Models\Role::firstOrCreate(
+            ['name' => \App\Models\Role::ADMIN],
+            ['display_name' => 'Administrador']
+        );
+        $admin->roles()->attach($rolAdmin->id);
+        $this->actingAs($admin);
+
         Livewire::test(ProjectIndex::class)
             ->call('confirmarEliminar', $proyecto->id)
             ->call('eliminar');

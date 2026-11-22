@@ -367,4 +367,185 @@ class AuthorizationTest extends TestCase
             'razon_social' => 'Cliente creado por administrador',
         ]);
     }
+
+    public function test_empleado_no_puede_acceder_a_gestion_de_proyectos(): void
+    {
+        $this->actingAs($this->employeeUser)
+            ->get(route('servicios.proyectos'))
+            ->assertForbidden();
+    }
+    public function test_contable_no_puede_crear_proyectos_mediante_livewire(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->set('nombre', 'Proyecto no autorizado')
+            ->set('cliente_id', 1)
+            ->call('guardarProyecto')
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('proyectos', [
+            'nombre' => 'Proyecto no autorizado',
+        ]);
+    }
+    public function test_contable_no_puede_abrir_formulario_crear_proyecto(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->call('abrirModalCrear')
+            ->assertForbidden();
+    }
+    public function test_contable_no_puede_abrir_formulario_editar_proyecto(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto protegido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->call('abrirModalEditar', $proyecto->id)
+            ->assertForbidden();
+    }
+    public function test_contable_no_puede_eliminar_proyectos_mediante_livewire(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente protegido',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto protegido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->set('proyectoToDeleteId', $proyecto->id)
+            ->call('eliminar')
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('proyectos', [
+            'id' => $proyecto->id,
+            'nombre' => 'Proyecto protegido',
+        ]);
+    }
+    public function test_contable_no_puede_abrir_confirmacion_eliminar_proyecto(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente protegido',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto protegido',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->call('confirmarEliminar', $proyecto->id)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('proyectos', [
+            'id' => $proyecto->id,
+            'nombre' => 'Proyecto protegido',
+        ]);
+    }
+    public function test_contable_no_puede_mostrar_modal_proyecto_manipulando_livewire(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->set('modalOpen', true)
+            ->assertDontSee('Guardar Proyecto');
+    }
+    public function test_contable_consulta_proyectos_sin_ver_acciones_administrativas(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto de consulta',
+            'fecha_inicio' => '2026-01-01',
+            'fecha_fin' => '2026-12-31',
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->assertSee('Proyecto de consulta')
+            ->assertSee('Ver Detalle')
+            ->assertDontSee('Nuevo Proyecto')
+            ->assertDontSee('wire:click="abrirModalEditar', false)
+            ->assertDontSee('wire:click="confirmarEliminar', false);
+    }
+    public function test_contable_no_puede_mostrar_modal_eliminar_proyecto_manipulando_livewire(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->set('modalDeleteOpen', true)
+            ->assertDontSee('¿Eliminar proyecto de servicio?');
+    }
+    public function test_planificador_puede_crear_proyecto_mediante_livewire(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente planificación',
+        ]);
+
+        $this->actingAs($this->planner);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->assertSee('Nuevo Proyecto')
+            ->call('abrirModalCrear')
+            ->set('cliente_id', $cliente->id)
+            ->set('nombre', 'Proyecto creado por planificador')
+            ->set('fecha_inicio', '2026-11-01')
+            ->set('fecha_fin', '2026-11-30')
+            ->call('guardarProyecto')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('proyectos', [
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto creado por planificador',
+        ]);
+    }
+    public function test_administrador_puede_crear_proyecto_mediante_livewire(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente administración',
+        ]);
+
+        $this->actingAs($this->admin);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ProjectIndex::class)
+            ->assertSee('Nuevo Proyecto')
+            ->call('abrirModalCrear')
+            ->set('cliente_id', $cliente->id)
+            ->set('nombre', 'Proyecto creado por administrador')
+            ->set('fecha_inicio', '2026-11-01')
+            ->set('fecha_fin', '2026-11-30')
+            ->call('guardarProyecto')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('proyectos', [
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto creado por administrador',
+        ]);
+    }
 }
