@@ -284,4 +284,87 @@ class AuthorizationTest extends TestCase
             'instalacion_id' => $instalacion->id,
         ]);
     }
+
+    public function test_contable_puede_consultar_clientes_sin_ver_acciones_administrativas(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de consulta',
+            'activo' => true,
+        ]);
+
+        \App\Models\Instalacion::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Instalación de consulta',
+            'activo' => true,
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->assertSee('Cliente de consulta')
+            ->assertSee('Instalación de consulta')
+            ->assertDontSee('Nuevo Cliente')
+            ->assertDontSee('Añadir Instalación')
+            ->assertDontSee('Editar')
+            ->assertDontSee('Eliminar');
+    }
+
+    public function test_contable_no_puede_mostrar_modal_cliente_manipulando_livewire(): void
+    {
+        $this->actingAs($this->accountant);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->set('modalClienteOpen', true)
+            ->assertDontSee('Razón Social o Nombre');
+    }
+
+    public function test_contable_no_puede_mostrar_otros_modales_manipulando_livewire(): void
+    {
+        $this->actingAs($this->accountant);
+
+        $modales = [
+            'modalInstalacionOpen' => 'Añadir Nueva Instalación',
+            'modalDeleteClienteOpen' => '¿Eliminar cliente?',
+            'modalDeleteInstalacionOpen' => '¿Eliminar instalación?',
+        ];
+
+        foreach ($modales as $propiedad => $texto) {
+            \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+                ->set($propiedad, true)
+                ->assertDontSee($texto);
+        }
+    }
+    public function test_planificador_puede_gestionar_clientes_mediante_livewire(): void
+    {
+        $this->actingAs($this->planner);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->assertSee('Nuevo Cliente')
+            ->call('abrirModalCliente')
+            ->assertSee('Razón Social o Nombre')
+            ->set('razon_social', 'Cliente creado por planificador')
+            ->call('guardarCliente')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('clientes', [
+            'razon_social' => 'Cliente creado por planificador',
+        ]);
+    }
+
+    public function test_administrador_puede_gestionar_clientes_mediante_livewire(): void
+    {
+        $this->actingAs($this->admin);
+
+        \Livewire\Livewire::test(\App\Livewire\Services\ClientIndex::class)
+            ->assertSee('Nuevo Cliente')
+            ->call('abrirModalCliente')
+            ->assertSee('Razón Social o Nombre')
+            ->set('razon_social', 'Cliente creado por administrador')
+            ->call('guardarCliente')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('clientes', [
+            'razon_social' => 'Cliente creado por administrador',
+        ]);
+    }
 }
