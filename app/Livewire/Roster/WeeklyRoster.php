@@ -621,7 +621,10 @@ class WeeklyRoster extends Component
                 )
                 ->orderBy('nombre')
                 ->get(),
-            'empleados' => Empleado::where('activo', true)->orderBy('nombre')->get(),
+            'empleados' => Empleado::with('categoriasHabilitadas')
+                ->where('activo', true)
+                ->orderBy('nombre')
+                ->get(),
             'categorias' => Categoria::where('activo', true)->orderBy('nombre')->get(),
         ])->layout('layouts.app', ['title' => 'Cuadrante Operativo']);
     }

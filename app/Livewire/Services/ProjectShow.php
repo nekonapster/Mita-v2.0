@@ -20,6 +20,8 @@ class ProjectShow extends Component
             'necesidadesServicio.instalacion',
             'movimientosEconomicos',
         ])->findOrFail($id);
+
+        \Illuminate\Support\Facades\Gate::authorize('view', $this->proyecto);
     }
 
     public function render()

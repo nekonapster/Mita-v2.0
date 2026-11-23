@@ -28,7 +28,11 @@ class EconomicsDashboard extends Component
 
     public function mount(?int $proyectoSeleccionado = null): void
     {
-        $this->proyectoSeleccionado = $proyectoSeleccionado ?: Proyecto::first()?->id;
+        $idProyecto = request()->integer('proyectoSeleccionado');
+        $this->proyectoSeleccionado =
+            ($idProyecto > 0 && Proyecto::whereKey($idProyecto)->exists())
+            ? $idProyecto
+            : Proyecto::first()?->id;
         $this->fechaDesde = now()->startOfYear()->toDateString();
         $this->fechaHasta = now()->endOfYear()->toDateString();
         $this->anioCierre = now()->subMonth()->year;

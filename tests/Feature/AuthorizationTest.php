@@ -548,4 +548,98 @@ class AuthorizationTest extends TestCase
             'nombre' => 'Proyecto creado por administrador',
         ]);
     }
+    public function test_empleado_no_puede_consultar_detalle_de_proyecto(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto restringido',
+            'fecha_inicio' => '2026-11-01',
+            'estado' => 'activo',
+        ]);
+
+        $this->actingAs($this->employeeUser);
+
+        $this->get(route('servicios.proyectos.show', $proyecto->id))
+            ->assertForbidden();
+    }
+    public function test_contable_puede_consultar_detalle_de_proyecto(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto para contabilidad',
+            'fecha_inicio' => '2026-11-01',
+            'estado' => 'activo',
+        ]);
+
+        $this->actingAs($this->accountant);
+
+        $this->get(route('servicios.proyectos.show', $proyecto->id))
+            ->assertOk()
+            ->assertSee('Proyecto para contabilidad');
+    }
+    public function test_rrhh_puede_consultar_detalle_de_proyecto(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto para RRHH',
+            'fecha_inicio' => '2026-11-01',
+            'estado' => 'activo',
+        ]);
+
+        $this->actingAs($this->rrhh);
+
+        $this->get(route('servicios.proyectos.show', $proyecto->id))
+            ->assertOk()
+            ->assertSee('Proyecto para RRHH');
+    }
+    public function test_planificador_puede_consultar_detalle_de_proyecto(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto para planificación',
+            'fecha_inicio' => '2026-11-01',
+            'estado' => 'activo',
+        ]);
+
+        $this->actingAs($this->planner);
+
+        $this->get(route('servicios.proyectos.show', $proyecto->id))
+            ->assertOk()
+            ->assertSee('Proyecto para planificación');
+    }
+    public function test_administrador_puede_consultar_detalle_de_proyecto(): void
+    {
+        $cliente = \App\Models\Cliente::create([
+            'razon_social' => 'Cliente de prueba',
+        ]);
+
+        $proyecto = \App\Models\Proyecto::create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Proyecto para administración',
+            'fecha_inicio' => '2026-11-01',
+            'estado' => 'activo',
+        ]);
+
+        $this->actingAs($this->admin);
+
+        $this->get(route('servicios.proyectos.show', $proyecto->id))
+            ->assertOk()
+            ->assertSee('Proyecto para administración');
+    }
 }

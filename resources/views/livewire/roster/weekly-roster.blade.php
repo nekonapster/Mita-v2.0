@@ -579,7 +579,8 @@
                         <option value="">Seleccionar empleado compatible...</option>
                         @foreach($empleados as $emp)
                         <option value="{{ $emp->id }}">
-                            {{ $emp->nombre_completo }} ({{ $emp->categoria->nombre ?? '' }})
+                            {{ $emp->nombre_completo }}
+                            [{{ $emp->categoriasHabilitadas->pluck('codigo')->implode('] [') ?: 'Sin habilitaciones' }}]
                         </option>
                         @endforeach
                     </select>

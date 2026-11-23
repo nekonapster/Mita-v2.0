@@ -173,7 +173,20 @@ class ServiceNeedsManager extends Component
         $res = $service->generarTurnos($nec, $this->genFechaDesde, $this->genFechaHasta, $this->genEstado);
 
         $this->modalGenerarOpen = false;
-        session()->flash('success', "Se han generado {$res['generados']} turnos con éxito (y se omitieron {$res['omitidos']} turnos ya existentes).");
+
+        $this->feedbackMessage = null;
+        $this->feedbackError = null;
+
+        if ($res['generados'] > 0) {
+            $this->feedbackMessage =
+                "Se generaron {$res['generados']} turnos correctamente. "
+                . "Disponibles en Planificación → Cuadrantes semanal/mensual. "
+                . "({$res['omitidos']} duplicados omitidos).";
+        } else {
+            $this->feedbackError =
+                "No se generaron turnos nuevos. "
+                . "Revisá la vigencia de la necesidad y los turnos existentes.";
+        }
     }
 
     public function abrirModalSync(int $id): void
@@ -239,7 +252,7 @@ class ServiceNeedsManager extends Component
             $nec = NecesidadServicio::with('turnos.asignacionesActivas')->findOrFail($this->necesidadToDeleteId);
 
             foreach ($nec->turnos as $turno) {
-                if ($turno->asignacionesActivas()->count() === 0) {
+                if ($turno->asignaciones()->count() === 0) {
                     $turno->delete();
                 } else {
                     $turno->update(['estado' => Turno::ESTADO_CANCELADO]);
