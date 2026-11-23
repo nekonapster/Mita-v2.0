@@ -642,4 +642,31 @@ class AuthorizationTest extends TestCase
             ->assertOk()
             ->assertSee('Proyecto para administración');
     }
+    public function test_administrador_puede_editar_categoria_existente(): void
+{
+    $categoria = \App\Models\Categoria::create([
+        'nombre' => 'Socorrista',
+        'codigo' => 'SOC',
+        'descripcion' => 'Descripción original',
+        'activo' => true,
+    ]);
+
+    $this->actingAs($this->admin);
+
+    \Livewire\Livewire::test(\App\Livewire\Services\CatalogManager::class)
+        ->call('editarCategoria', $categoria->id)
+        ->set('catNombre', 'Socorrista Acuático')
+        ->set('catDescripcion', 'Vigilancia y rescate acuático')
+        ->call('guardarCategoria')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('categorias', [
+        'id' => $categoria->id,
+        'nombre' => 'Socorrista Acuático',
+        'descripcion' => 'Vigilancia y rescate acuático',
+        'codigo' => 'SOC',
+    ]);
+
+    $this->assertDatabaseCount('categorias', 1);
+}
 }

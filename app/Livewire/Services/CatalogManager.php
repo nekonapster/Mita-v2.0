@@ -12,28 +12,59 @@ class CatalogManager extends Component
     public string $catNombre = '';
     public string $catCodigo = '';
     public string $catDescripcion = '';
+    public ?int $categoriaId = null;
 
     // Actividades
     public string $actNombre = '';
     public string $actDescripcion = '';
 
+    public function editarCategoria(int $id): void
+    {
+        $categoria = Categoria::findOrFail($id);
+
+        $this->categoriaId = $categoria->id;
+        $this->catNombre = $categoria->nombre;
+        $this->catCodigo = $categoria->codigo;
+        $this->catDescripcion = $categoria->descripcion ?? '';
+    }
+
     public function guardarCategoria(): void
     {
         $this->validate([
             'catNombre' => 'required|string|max:100',
-            'catCodigo' => 'required|string|max:20|unique:categorias,codigo',
+            'catCodigo' => [
+                'required',
+                'string',
+                'max:20',
+                \Illuminate\Validation\Rule::unique('categorias', 'codigo')
+                    ->ignore($this->categoriaId),
+            ],
             'catDescripcion' => 'nullable|string|max:300',
         ]);
 
-        Categoria::create([
+        $datos = [
             'nombre' => $this->catNombre,
             'codigo' => strtoupper($this->catCodigo),
             'descripcion' => $this->catDescripcion ?: null,
-            'activo' => true,
+        ];
+
+        if ($this->categoriaId) {
+            Categoria::findOrFail($this->categoriaId)->update($datos);
+            $mensaje = 'Categoría profesional actualizada.';
+        } else {
+            Categoria::create($datos + ['activo' => true]);
+            $mensaje = 'Categoría profesional creada.';
+        }
+
+        $this->reset([
+            'categoriaId',
+            'catNombre',
+            'catCodigo',
+            'catDescripcion',
         ]);
 
-        $this->reset(['catNombre', 'catCodigo', 'catDescripcion']);
-        session()->flash('success', 'Categoría profesional creada.');
+        $this->feedbackMessage = $mensaje;
+        $this->feedbackError = null;
     }
 
     public function guardarActividad(): void
