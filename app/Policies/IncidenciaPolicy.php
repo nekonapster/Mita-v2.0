@@ -19,7 +19,13 @@ class IncidenciaPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasRole([Role::RRHH, Role::PLANNER, Role::ACCOUNTANT, Role::EMPLOYEE]);
+        return $user->hasRole([
+            Role::RRHH,
+            Role::PLANNER,
+            Role::COORDINATOR,
+            Role::ACCOUNTANT,
+            Role::EMPLOYEE,
+        ]);
     }
 
     public function view(User $user, Incidencia $incidencia): bool

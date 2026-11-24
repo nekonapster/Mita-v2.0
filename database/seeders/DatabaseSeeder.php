@@ -36,6 +36,10 @@ class DatabaseSeeder extends Seeder
             Role::PLANNER => ['display_name' => 'Planificador', 'description' => 'Gestión de clientes, servicios, turnos y cuadrantes'],
             Role::ACCOUNTANT => ['display_name' => 'Contable', 'description' => 'Control de costes, horas validadas y finanzas'],
             Role::EMPLOYEE => ['display_name' => 'Empleado', 'description' => 'Portal de empleado: consulta de turnos, imputación de horas y ausencias'],
+            Role::COORDINATOR => [
+                'display_name' => 'Coordinador',
+                'description' => 'Coordinación operativa, registro y seguimiento de incidencias',
+            ],
         ];
 
         $roles = [];

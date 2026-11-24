@@ -14,6 +14,7 @@ class Role extends Model
     public const ADMIN = 'admin';
     public const RRHH = 'rrhh';
     public const PLANNER = 'planner';
+    public const COORDINATOR = 'coordinator';
     public const ACCOUNTANT = 'accountant';
     public const EMPLOYEE = 'employee';
 

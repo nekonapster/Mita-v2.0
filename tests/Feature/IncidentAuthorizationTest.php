@@ -95,4 +95,20 @@ class IncidentAuthorizationTest extends TestCase
             ->get(route('rrhh.incidencias'))
             ->assertOk();
     }
+    
+public function test_coordinador_puede_acceder_a_incidencias(): void
+{
+    $rol = Role::firstOrCreate(
+        ['name' => 'coordinator'],
+        ['display_name' => 'Coordinador']
+    );
+
+    $coordinador = User::factory()->create();
+    $coordinador->roles()->attach($rol->id);
+
+    $this->actingAs($coordinador)
+        ->get(route('rrhh.incidencias'))
+        ->assertOk();
+}
+
 }
