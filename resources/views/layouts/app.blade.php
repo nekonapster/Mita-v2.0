@@ -292,6 +292,10 @@
                     class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800/80 hover:text-white transition {{ request()->routeIs('rrhh.incidencias*') ? 'bg-cyan-500/10 text-cyan-400 font-semibold' : '' }}">
                     <span>Incidencias</span>
                 </a>
+                <a href="{{ route('coordinacion.sustituciones') }}"
+                    class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800/80 hover:text-white transition {{ request()->routeIs('coordinacion.sustituciones') ? 'bg-cyan-500/10 text-cyan-400 font-semibold' : '' }}">
+                    <span>Ausencias y Sustituciones</span>
+                </a>
             </div>
             @endhasanyrole
 

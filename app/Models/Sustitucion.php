@@ -34,4 +34,22 @@ class Sustitucion extends Model
     {
         return $this->hasMany(SustitucionTramo::class);
     }
+
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $sustitucion): void {
+            $modalidadesPermitidas = [
+                self::PAGO_EMPRESA,
+                self::PAGO_EMPRESA_DESCUENTO_HORAS,
+                self::PAGO_MONITOR_SUSTITUIDO,
+            ];
+
+            if (! in_array($sustitucion->modalidad_pago, $modalidadesPermitidas, true)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'modalidad_pago' => 'La modalidad de pago seleccionada no es válida.',
+                ]);
+            }
+        });
+    }
 }

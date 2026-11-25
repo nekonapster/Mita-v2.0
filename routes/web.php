@@ -20,6 +20,7 @@ use App\Livewire\Services\ProjectShow;
 use App\Livewire\Services\ServiceNeedsManager;
 use Illuminate\Support\Facades\Route;
 use App\Models\Empleado;
+use App\Livewire\Coordinacion\AusenciasSustituciones;
 
 /*
 |--------------------------------------------------------------------------
@@ -85,5 +86,13 @@ Route::middleware(['auth'])->group(function () {
     // Administración del Sistema (Gestión de usuarios y asignación de roles)
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/usuarios', UserRoleManager::class)->name('usuarios');
+    });
+
+    // Coordinación Operativa
+    // Coordinación Operativa
+    Route::prefix('coordinacion')->name('coordinacion.')->group(function () {
+        Route::get('/sustituciones', AusenciasSustituciones::class)
+            ->middleware('can:registrarSustituciones,App\Models\User')
+            ->name('sustituciones');
     });
 });
