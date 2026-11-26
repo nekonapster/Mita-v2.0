@@ -173,11 +173,11 @@
 
             <div class="flex gap-6 text-sm">
                 <span class="text-emerald-400">
-                  CUBIERTAS = {{ $cobertura['cubiertas'] }} hr. 
+                    CUBIERTAS = {{ $cobertura['cubiertas'] }} hr.
                 </span>
                 <span> - </span>
                 <span class="text-amber-400">
-                   SIN CUBRIR = {{ $cobertura['sin_cubrir'] }} hr. 
+                    SIN CUBRIR = {{ $cobertura['sin_cubrir'] }} hr.
                 </span>
             </div>
 
@@ -204,7 +204,13 @@
             @endif
 
 
-            <div class="flex justify-end border-t border-slate-700 pt-5 mt-5">
+            @if(count($sustitutos) === 0)
+            <p class="text-xs text-amber-400">
+                Sin sustitutos: la ausencia permanecerá sin cobertura.
+            </p>
+            @endif
+
+            <div class="flex justify-end pt-5 mt-5">
                 <button type="button" wire:click="guardar" wire:loading.attr="disabled" wire:target="guardar"
                     @disabled($guardadoCorrectamente)
                     class="px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
@@ -222,12 +228,93 @@
             </div>
 
 
-            @if(count($sustitutos) === 0)
-            <p class="text-xs text-amber-400">
-                Sin sustitutos: la ausencia permanecerá sin cobertura.
-            </p>
-            @endif
 
         </div>
     </div>
+
+    <!-- Historial de sustituciones -->
+    <section class="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 space-y-4">
+
+        <h2 class="text-base font-bold text-white">
+            Historial de sustituciones
+        </h2>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="text-xs text-slate-400 border-b border-slate-700">
+                    <tr>
+                        <th class="py-3 px-2">Empleado ausente</th>
+                        <th class="py-3 px-2">Fecha y horario</th>
+                        <th class="py-3 px-2">Estado</th>
+                        <th class="py-3 px-2">Sustitutos</th>
+                        <th class="py-3 px-2">Modalidad de pago</th>
+                    </tr>
+                </thead>
+
+                <tbody class="divide-y divide-slate-700">
+                    @forelse($historial as $sustitucion)
+                    <tr wire:key="historial-{{ $sustitucion->id }}">
+                        <td class="py-3 px-2 text-white">
+                            {{ $sustitucion->ausencia->empleado->nombre_completo }}
+                        </td>
+
+                        <td class="py-3 px-2 text-slate-300 whitespace-nowrap">
+                            {{
+                            $sustitucion->ausencia->fecha_hora_inicio->copy()->timezone('Europe/Madrid')->format('d/m/Y
+                            H:i') }}
+                            —
+                            {{ $sustitucion->ausencia->fecha_hora_fin->copy()->timezone('Europe/Madrid')->format('d/m/Y
+                            H:i') }}
+                        </td>
+
+                        <td class="py-3 px-2 text-slate-300">
+                            {{ ucfirst($sustitucion->ausencia->estado) }}
+                        </td>
+
+                        <td class="py-3 px-2 text-slate-300">
+                            @forelse($sustitucion->tramos as $tramo)
+                            <div>
+                                {{ $tramo->empleado->nombre_completo }}
+                                <span class="text-xs text-slate-400">
+                                    ({{ $tramo->inicio->copy()->timezone('Europe/Madrid')->format('H:i') }}
+                                    -
+                                    {{ $tramo->fin->copy()->timezone('Europe/Madrid')->format('H:i') }})
+                                </span>
+                            </div>
+                            @empty
+                            <span class="text-slate-500">Sin sustitutos</span>
+                            @endforelse
+                        </td>
+
+                        <td class="py-3 px-2 text-slate-300">
+                            @switch($sustitucion->modalidad_pago)
+                            @case('empresa')
+                            ATAAA
+                            @break
+                            @case('empresa_descuento_horas')
+                            ATAAA descuenta horas
+                            @break
+                            @case('monitor_sustituido')
+                            Monitor sustituido
+                            @break
+                            @endswitch
+                        </td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="5" class="py-6 text-center text-slate-400">
+                            Todavía no hay sustituciones registradas.
+                        </td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+        @if ($historial->hasPages())
+        <div class="mt-4 border-t border-slate-700 pt-4">
+            {{ $historial->links() }}
+        </div>
+        @endif
+    </section>
+
 </div>

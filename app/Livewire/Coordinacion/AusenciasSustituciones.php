@@ -10,9 +10,12 @@ use App\Models\SustitucionTramo;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Livewire\WithPagination;
 
 class AusenciasSustituciones extends Component
 {
+    use WithPagination;
+
     public ?int $empleadoAusenteId = null;
     public string $tipoAusencia = 'otro';
     public string $fechaHoraInicio = '';
@@ -131,7 +134,7 @@ class AusenciasSustituciones extends Component
             'sustitutos.*.inicio' => ['required', 'date'],
             'sustitutos.*.fin' => ['required', 'date'],
         ]);
-        
+
 
         foreach ($datos['sustitutos'] as $index => $tramo) {
             if ((int) $tramo['empleado_id'] === (int) $datos['empleadoAusenteId']) {
@@ -197,6 +200,14 @@ class AusenciasSustituciones extends Component
                 ->orderBy('nombre')
                 ->orderBy('apellidos')
                 ->get(),
+
+            'historial' => Sustitucion::with([
+                'ausencia.empleado',
+                'tramos.empleado',
+            ])
+                ->latest('id')
+                ->paginate(10),
+
         ])->layout('layouts.app', [
             'title' => 'Ausencias y Sustituciones',
         ]);

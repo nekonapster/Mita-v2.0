@@ -8,6 +8,12 @@ use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Models\User;
 use App\Models\Role;
+use App\Models\Ausencia;
+use App\Models\Categoria;
+use App\Models\Empleado;
+use App\Models\Sustitucion;
+use App\Models\SustitucionTramo;
+use Carbon\Carbon;
 
 
 class CoordinatorSubstitutionFormTest extends TestCase
@@ -75,5 +81,116 @@ class CoordinatorSubstitutionFormTest extends TestCase
         $this->assertDatabaseCount('ausencias', 0);
         $this->assertDatabaseCount('sustituciones', 0);
         $this->assertDatabaseCount('sustitucion_tramos', 0);
+    }
+
+    public function test_coordinador_puede_ver_historial_de_sustituciones(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
+
+        $usuario = User::factory()->create();
+        $usuario->roles()->attach($rol->id);
+
+        $categoria = Categoria::create([
+            'nombre' => 'Monitor de Natación',
+            'codigo' => 'MON',
+        ]);
+
+        $ausente = Empleado::create([
+            'nombre' => 'Laura',
+            'apellidos' => 'Ruiz',
+            'activo' => true,
+            'categoria_id' => $categoria->id,
+        ]);
+
+        $sustituto = Empleado::create([
+            'nombre' => 'David',
+            'apellidos' => 'Martín',
+            'activo' => true,
+            'categoria_id' => $categoria->id,
+        ]);
+
+        $ausencia = Ausencia::create([
+            'empleado_id' => $ausente->id,
+            'tipo' => Ausencia::TIPO_PERMISO,
+            'fecha_hora_inicio' => Carbon::parse('2026-11-25 09:00', 'Europe/Madrid')->utc(),
+            'fecha_hora_fin' => Carbon::parse('2026-11-25 13:00', 'Europe/Madrid')->utc(),
+            'estado' => Ausencia::ESTADO_PENDIENTE,
+        ]);
+
+        $sustitucion = Sustitucion::create([
+            'ausencia_id' => $ausencia->id,
+            'modalidad_pago' => Sustitucion::PAGO_EMPRESA,
+        ]);
+
+        SustitucionTramo::create([
+            'sustitucion_id' => $sustitucion->id,
+            'empleado_id' => $sustituto->id,
+            'inicio' => Carbon::parse('2026-11-25 09:00', 'Europe/Madrid')->utc(),
+            'fin' => Carbon::parse('2026-11-25 11:00', 'Europe/Madrid')->utc(),
+        ]);
+
+        Livewire::actingAs($usuario)
+            ->test(AusenciasSustituciones::class)
+            ->assertSee('Historial de sustituciones')
+            ->assertSee('Laura Ruiz')
+            ->assertSee('David Martín')
+            ->assertSee('ATAAA');
+    }
+
+    public function test_historial_permite_consultar_sustituciones_de_la_segunda_pagina(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
+
+        $usuario = User::factory()->create();
+        $usuario->roles()->attach($rol->id);
+
+        $categoria = \App\Models\Categoria::create([
+            'nombre' => 'Monitor de Natación',
+            'codigo' => 'MON',
+        ]);
+
+        $empleado = \App\Models\Empleado::create([
+            'nombre' => 'Laura',
+            'apellidos' => 'Ruiz',
+            'activo' => true,
+            'categoria_id' => $categoria->id,
+        ]);
+
+        $idSustitucionAntigua = null;
+
+        for ($i = 1; $i <= 11; $i++) {
+            $ausencia = \App\Models\Ausencia::create([
+                'empleado_id' => $empleado->id,
+                'tipo' => 'permiso',
+                'fecha_hora_inicio' => \Carbon\Carbon::parse('2026-11-25 09:00', 'Europe/Madrid')->utc(),
+                'fecha_hora_fin' => \Carbon\Carbon::parse('2026-11-25 13:00', 'Europe/Madrid')->utc(),
+                'estado' => 'pendiente',
+                'observaciones' => "Registro historial {$i}",
+            ]);
+
+            $sustitucion = \App\Models\Sustitucion::create([
+                'ausencia_id' => $ausencia->id,
+                'modalidad_pago' => 'empresa',
+            ]);
+
+            if ($i === 1) {
+                $idSustitucionAntigua = $sustitucion->id;
+            }
+        }
+
+        $this->actingAs($usuario)
+            ->get(route('coordinacion.sustituciones'))
+            ->assertOk()
+            ->assertDontSee('wire:key="historial-' . $idSustitucionAntigua . '"', false);
+
+        $this->get(route('coordinacion.sustituciones', ['page' => 2]))
+            ->assertOk()
+            ->assertSee('wire:key="historial-' . $idSustitucionAntigua . '"', false);
     }
 }
