@@ -9,6 +9,7 @@
         </p>
     </div>
 
+    @can('registrarSustituciones')
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-3xl space-y-5">
 
         <h2 class="text-base font-bold text-white">
@@ -231,6 +232,7 @@
 
         </div>
     </div>
+    @endcan
 
     <!-- Historial de sustituciones -->
     <section class="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 space-y-4">

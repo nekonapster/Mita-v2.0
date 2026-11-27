@@ -47,6 +47,15 @@ class AppServiceProvider extends ServiceProvider
                 $user->hasRole((array) $roles)
             );
         });
+        Gate::define('consultarSustituciones', function (User $user): bool {
+            return $user->isSuperAdmin()
+                || $user->hasRole([
+                    'admin',
+                    'rrhh',
+                    'coordinator',
+                    'planner',
+                ]);
+        });
 
         Gate::define('registrarSustituciones', function (User $user): bool {
             return $user->isSuperAdmin()

@@ -279,7 +279,18 @@ class SubstitutionTest extends TestCase
 
     public function test_no_duplica_horas_cuando_los_sustitutos_se_solapan(): void
     {
-        Livewire::test(AusenciasSustituciones::class)
+
+        $rol = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
+
+        $coordinador = User::factory()->create();
+        $coordinador->roles()->attach($rol->id);
+
+
+        Livewire::actingAs($coordinador)
+            ->test(AusenciasSustituciones::class)
             ->set('fechaHoraInicio', '2026-11-25T09:00')
             ->set('fechaHoraFin', '2026-11-25T13:00')
             ->set('sustitutos', [
@@ -302,7 +313,17 @@ class SubstitutionTest extends TestCase
 
     public function test_cobertura_completa_no_deja_horas_pendientes(): void
     {
-        Livewire::test(AusenciasSustituciones::class)
+
+        $rol = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
+
+        $coordinador = User::factory()->create();
+        $coordinador->roles()->attach($rol->id);
+
+        Livewire::actingAs($coordinador)
+            ->test(AusenciasSustituciones::class)
             ->set('fechaHoraInicio', '2026-11-25T09:00')
             ->set('fechaHoraFin', '2026-11-25T13:00')
             ->set('sustitutos', [
@@ -325,7 +346,17 @@ class SubstitutionTest extends TestCase
 
     public function test_ausencia_sin_sustitutos_queda_sin_cobertura(): void
     {
-        Livewire::test(AusenciasSustituciones::class)
+
+        $rol = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
+
+        $coordinador = User::factory()->create();
+        $coordinador->roles()->attach($rol->id);
+
+        Livewire::actingAs($coordinador)
+            ->test(AusenciasSustituciones::class)
             ->set('fechaHoraInicio', '2026-11-25T09:00')
             ->set('fechaHoraFin', '2026-11-25T13:00')
             ->set('sustitutos', [])

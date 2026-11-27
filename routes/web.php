@@ -92,7 +92,7 @@ Route::middleware(['auth'])->group(function () {
     // Coordinación Operativa
     Route::prefix('coordinacion')->name('coordinacion.')->group(function () {
         Route::get('/sustituciones', AusenciasSustituciones::class)
-            ->middleware('can:registrarSustituciones,App\Models\User')
+            ->middleware('can:consultarSustituciones')
             ->name('sustituciones');
     });
 });

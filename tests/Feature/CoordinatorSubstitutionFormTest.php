@@ -194,131 +194,176 @@ class CoordinatorSubstitutionFormTest extends TestCase
             ->assertSee('wire:key="historial-' . $idSustitucionAntigua . '"', false);
     }
 
-public function test_historial_filtra_por_empleado_ausente(): void
-{
-    $rol = Role::firstOrCreate(
-        ['name' => 'coordinator'],
-        ['display_name' => 'Coordinador']
-    );
+    public function test_historial_filtra_por_empleado_ausente(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
 
-    $usuario = User::factory()->create();
-    $usuario->roles()->attach($rol->id);
+        $usuario = User::factory()->create();
+        $usuario->roles()->attach($rol->id);
 
-    $categoria = \App\Models\Categoria::create([
-        'nombre' => 'Monitor',
-        'codigo' => 'MON',
-    ]);
+        $categoria = \App\Models\Categoria::create([
+            'nombre' => 'Monitor',
+            'codigo' => 'MON',
+        ]);
 
-    $laura = \App\Models\Empleado::create([
-        'nombre' => 'Laura',
-        'apellidos' => 'Ruiz',
-        'categoria_id' => $categoria->id,
-        'activo' => true,
-    ]);
+        $laura = \App\Models\Empleado::create([
+            'nombre' => 'Laura',
+            'apellidos' => 'Ruiz',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
 
-    $ana = \App\Models\Empleado::create([
-        'nombre' => 'Ana',
-        'apellidos' => 'García',
-        'categoria_id' => $categoria->id,
-        'activo' => true,
-    ]);
+        $ana = \App\Models\Empleado::create([
+            'nombre' => 'Ana',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
 
-    foreach ([$laura, $ana] as $empleado) {
-        $ausencia = \App\Models\Ausencia::create([
-            'empleado_id' => $empleado->id,
+        foreach ([$laura, $ana] as $empleado) {
+            $ausencia = \App\Models\Ausencia::create([
+                'empleado_id' => $empleado->id,
+                'tipo' => 'permiso',
+                'fecha_hora_inicio' => '2026-11-25 08:00:00',
+                'fecha_hora_fin' => '2026-11-25 12:00:00',
+                'estado' => 'pendiente',
+            ]);
+
+            $sustitucion = \App\Models\Sustitucion::create([
+                'ausencia_id' => $ausencia->id,
+                'modalidad_pago' => 'empresa',
+            ]);
+
+            $ids[$empleado->id] = $sustitucion->id;
+        }
+
+        Livewire::actingAs($usuario)
+            ->test(AusenciasSustituciones::class)
+            ->assertSee('wire:key="historial-' . $ids[$laura->id] . '"', false)
+            ->assertSee('wire:key="historial-' . $ids[$ana->id] . '"', false)
+            ->set('empleadoHistorialFiltro', $laura->id)
+            ->assertSee('wire:key="historial-' . $ids[$laura->id] . '"', false)
+            ->assertDontSee('wire:key="historial-' . $ids[$ana->id] . '"', false);
+    }
+
+    public function test_cambiar_filtro_del_historial_reinicia_la_paginacion(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
+
+        $usuario = User::factory()->create();
+        $usuario->roles()->attach($rol->id);
+
+        $categoria = \App\Models\Categoria::create([
+            'nombre' => 'Monitor',
+            'codigo' => 'MON',
+        ]);
+
+        $laura = \App\Models\Empleado::create([
+            'nombre' => 'Laura',
+            'apellidos' => 'Ruiz',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        $ana = \App\Models\Empleado::create([
+            'nombre' => 'Ana',
+            'apellidos' => 'García',
+            'categoria_id' => $categoria->id,
+            'activo' => true,
+        ]);
+
+        for ($i = 0; $i < 11; $i++) {
+            $ausencia = \App\Models\Ausencia::create([
+                'empleado_id' => $laura->id,
+                'tipo' => 'permiso',
+                'fecha_hora_inicio' => '2026-11-25 08:00:00',
+                'fecha_hora_fin' => '2026-11-25 12:00:00',
+                'estado' => 'pendiente',
+            ]);
+
+            \App\Models\Sustitucion::create([
+                'ausencia_id' => $ausencia->id,
+                'modalidad_pago' => 'empresa',
+            ]);
+        }
+
+        $ausenciaAna = \App\Models\Ausencia::create([
+            'empleado_id' => $ana->id,
             'tipo' => 'permiso',
             'fecha_hora_inicio' => '2026-11-25 08:00:00',
             'fecha_hora_fin' => '2026-11-25 12:00:00',
             'estado' => 'pendiente',
         ]);
 
-        $sustitucion = \App\Models\Sustitucion::create([
-            'ausencia_id' => $ausencia->id,
+        $sustitucionAna = \App\Models\Sustitucion::create([
+            'ausencia_id' => $ausenciaAna->id,
             'modalidad_pago' => 'empresa',
         ]);
 
-        $ids[$empleado->id] = $sustitucion->id;
+        Livewire::actingAs($usuario)
+            ->test(AusenciasSustituciones::class)
+            ->call('setPage', 2)
+            ->assertDontSee(
+                'wire:key="historial-' . $sustitucionAna->id . '"',
+                false
+            )
+            ->set('empleadoHistorialFiltro', $ana->id)
+            ->assertSee(
+                'wire:key="historial-' . $sustitucionAna->id . '"',
+                false
+            )
+            ->assertSet('paginators.page', 1);
     }
 
-    Livewire::actingAs($usuario)
-        ->test(AusenciasSustituciones::class)
-        ->assertSee('wire:key="historial-'.$ids[$laura->id].'"', false)
-        ->assertSee('wire:key="historial-'.$ids[$ana->id].'"', false)
-        ->set('empleadoHistorialFiltro', $laura->id)
-        ->assertSee('wire:key="historial-'.$ids[$laura->id].'"', false)
-        ->assertDontSee('wire:key="historial-'.$ids[$ana->id].'"', false);
-}
+    public function test_planificador_puede_consultar_sustituciones(): void
+    {
+        $rol = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
 
-public function test_cambiar_filtro_del_historial_reinicia_la_paginacion(): void
-{
-    $rol = Role::firstOrCreate(
-        ['name' => 'coordinator'],
-        ['display_name' => 'Coordinador']
-    );
+        $planificador = User::factory()->create();
+        $planificador->roles()->attach($rol->id);
 
-    $usuario = User::factory()->create();
-    $usuario->roles()->attach($rol->id);
-
-    $categoria = \App\Models\Categoria::create([
-        'nombre' => 'Monitor',
-        'codigo' => 'MON',
-    ]);
-
-    $laura = \App\Models\Empleado::create([
-        'nombre' => 'Laura',
-        'apellidos' => 'Ruiz',
-        'categoria_id' => $categoria->id,
-        'activo' => true,
-    ]);
-
-    $ana = \App\Models\Empleado::create([
-        'nombre' => 'Ana',
-        'apellidos' => 'García',
-        'categoria_id' => $categoria->id,
-        'activo' => true,
-    ]);
-
-    for ($i = 0; $i < 11; $i++) {
-        $ausencia = \App\Models\Ausencia::create([
-            'empleado_id' => $laura->id,
-            'tipo' => 'permiso',
-            'fecha_hora_inicio' => '2026-11-25 08:00:00',
-            'fecha_hora_fin' => '2026-11-25 12:00:00',
-            'estado' => 'pendiente',
-        ]);
-
-        \App\Models\Sustitucion::create([
-            'ausencia_id' => $ausencia->id,
-            'modalidad_pago' => 'empresa',
-        ]);
+        $this->actingAs($planificador)
+            ->get(route('coordinacion.sustituciones'))
+            ->assertOk();
     }
 
-    $ausenciaAna = \App\Models\Ausencia::create([
-        'empleado_id' => $ana->id,
-        'tipo' => 'permiso',
-        'fecha_hora_inicio' => '2026-11-25 08:00:00',
-        'fecha_hora_fin' => '2026-11-25 12:00:00',
-        'estado' => 'pendiente',
-    ]);
+    public function test_planificador_solo_ve_historial_y_coordinador_puede_registrar(): void
+    {
+        $rolPlanner = Role::firstOrCreate(
+            ['name' => Role::PLANNER],
+            ['display_name' => 'Planificador']
+        );
 
-    $sustitucionAna = \App\Models\Sustitucion::create([
-        'ausencia_id' => $ausenciaAna->id,
-        'modalidad_pago' => 'empresa',
-    ]);
+        $rolCoordinador = Role::firstOrCreate(
+            ['name' => 'coordinator'],
+            ['display_name' => 'Coordinador']
+        );
 
-    Livewire::actingAs($usuario)
-        ->test(AusenciasSustituciones::class)
-        ->call('setPage', 2)
-        ->assertDontSee(
-            'wire:key="historial-' . $sustitucionAna->id . '"',
-            false
-        )
-        ->set('empleadoHistorialFiltro', $ana->id)
-        ->assertSee(
-            'wire:key="historial-' . $sustitucionAna->id . '"',
-            false
-        )
-        ->assertSet('paginators.page', 1);
-}
+        $planificador = User::factory()->create();
+        $planificador->roles()->attach($rolPlanner->id);
 
+        $coordinador = User::factory()->create();
+        $coordinador->roles()->attach($rolCoordinador->id);
+
+        Livewire::actingAs($planificador)
+            ->test(AusenciasSustituciones::class)
+            ->assertSee('Historial de sustituciones')
+            ->assertDontSee('Registrar ausencia de empleado')
+            ->assertDontSee('wire:click="guardar"', false);
+
+        Livewire::actingAs($coordinador)
+            ->test(AusenciasSustituciones::class)
+            ->assertSee('Historial de sustituciones')
+            ->assertSee('Registrar ausencia de empleado')
+            ->assertSee('wire:click="guardar"', false);
+    }
 }
