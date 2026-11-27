@@ -23,6 +23,7 @@ class AusenciasSustituciones extends Component
     public string $observaciones = '';
     public string $modalidadPago = 'empresa';
     public bool $guardadoCorrectamente = false;
+    public ?int $empleadoHistorialFiltro = null;
 
     public array $sustitutos = [];
 
@@ -191,6 +192,11 @@ class AusenciasSustituciones extends Component
             'La ausencia y sus sustituciones se registraron correctamente.'
         );
     }
+    
+    public function updatedEmpleadoHistorialFiltro(): void
+    {
+        $this->resetPage();
+    }
 
 
     public function render()
@@ -205,6 +211,16 @@ class AusenciasSustituciones extends Component
                 'ausencia.empleado',
                 'tramos.empleado',
             ])
+                ->when(
+                    $this->empleadoHistorialFiltro !== null,
+                    fn($query) => $query->whereHas(
+                        'ausencia',
+                        fn($ausencias) => $ausencias->where(
+                            'empleado_id',
+                            $this->empleadoHistorialFiltro
+                        )
+                    )
+                )
                 ->latest('id')
                 ->paginate(10),
 

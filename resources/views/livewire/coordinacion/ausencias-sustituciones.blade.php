@@ -239,6 +239,26 @@
             Historial de sustituciones
         </h2>
 
+        <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div class="w-full sm:max-w-sm">
+                <label class="block text-xs text-slate-300 mb-1">
+                    Filtrar por empleado ausente
+                </label>
+
+                <select wire:model.live="empleadoHistorialFiltro"
+                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm">
+                    <option value="">Todos los empleados</option>
+
+                    @foreach($empleados as $empleado)
+                    <option value="{{ $empleado->id }}">
+                        {{ $empleado->nombre_completo }}
+                    </option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+
+
         <div class="overflow-x-auto">
             <table class="w-full text-sm text-left">
                 <thead class="text-xs text-slate-400 border-b border-slate-700">
