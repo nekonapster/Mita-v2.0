@@ -239,16 +239,6 @@
                     <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
                 </div>
                 <div class="space-y-1">
-                    @role('admin')
-                    <a href="{{ route('horas.validacion') }}"
-                        class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800/80 hover:text-white transition {{ request()->routeIs('horas.validacion*') ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold' : '' }}">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <span>Validación de Horas</span>
-                        @endrole
-                    </a>
                     <a href="{{ route('economia.informes') }}"
                         class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800/80 hover:text-white transition {{ request()->routeIs('economia.informes*') ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold' : '' }}">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
